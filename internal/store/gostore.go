@@ -2,60 +2,48 @@ package store
 
 import (
 	"context"
-	"errors"
-	"sync"
 
-	gostorepb "github.com/dillonkmcquade/gostore/proto"
+	"github.com/dillonkmcquade/gostore/internal/pb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type GoStore struct {
-	gostorepb.UnimplementedGoStoreServer
-	mut  sync.RWMutex
-	data map[string]string
+	pb.UnimplementedGoStoreServer
+	DB *DataStore
 }
 
 func New() *GoStore {
-	return &GoStore{data: map[string]string{}}
+	return &GoStore{DB: &DataStore{data: make(map[string]string)}}
 }
 
-func (self *GoStore) Write(ctx context.Context, in *gostorepb.WriteRequest) (*gostorepb.WriteReply, error) {
-	if self.hasKey(in.Key) {
-		return &gostorepb.WriteReply{Status: false, Message: "Existing key found"}, errors.New("Existing key found")
+func (self *GoStore) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
+	if self.DB.hasKey(in.Key) {
+		return nil, status.Error(codes.AlreadyExists, "Existing key found")
 	}
-	self.mut.Lock()
-	self.write(in.Key, in.Payload)
-	self.mut.Unlock()
-	return &gostorepb.WriteReply{Status: true, Message: "Success"}, nil
+	self.DB.write(in.Key, in.Payload)
+	return &pb.WriteReply{Status: true, Message: "Success"}, nil
 }
 
-func (self *GoStore) write(key string, value string) {
-	self.data[key] = value
-}
-
-func (self *GoStore) hasKey(key string) bool {
-	_, hasKey := self.data[key]
-	return hasKey
-}
-
-func (self *GoStore) Read(ctx context.Context, in *gostorepb.ReadRequest) (*gostorepb.ReadReply, error) {
-	if !self.hasKey(in.Key) {
-		return nil, errors.New("Key not found")
+func (self *GoStore) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadReply, error) {
+	if !self.DB.hasKey(in.Key) {
+		return nil, status.Error(codes.NotFound, "Key not found")
 	}
-	v := self.read(in.Key)
-	return &gostorepb.ReadReply{Value: v}, nil
+	v := self.DB.read(in.Key)
+	return &pb.ReadReply{Value: v}, nil
 }
 
-func (self *GoStore) read(key string) string {
-	self.mut.RLock()
-	v := self.data[key]
-	self.mut.RUnlock()
-	return v
+func (self *GoStore) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.WriteReply, error) {
+	if !self.DB.hasKey(in.Key) {
+		return nil, status.Error(codes.NotFound, "Key not found")
+	}
+	return &pb.WriteReply{Status: true, Message: "Success"}, nil
 }
 
-func (self *GoStore) Delete(ctx context.Context, in *gostorepb.ReadRequest) (*gostorepb.WriteReply, error) {
-	return nil, nil
-}
-
-func (self *GoStore) Update(ctx context.Context, in *gostorepb.WriteRequest) (*gostorepb.WriteReply, error) {
-	return nil, nil
+func (self *GoStore) Update(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
+	if !self.DB.hasKey(in.Key) {
+		return nil, status.Error(codes.NotFound, "Key not found")
+	}
+	self.DB.write(in.Key, in.Payload)
+	return &pb.WriteReply{Status: true, Message: "Success"}, nil
 }

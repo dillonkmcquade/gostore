@@ -5,8 +5,8 @@ import (
 	"log"
 	"net"
 
+	"github.com/dillonkmcquade/gostore/internal/pb"
 	"github.com/dillonkmcquade/gostore/internal/store"
-	gostorepb "github.com/dillonkmcquade/gostore/proto"
 	"google.golang.org/grpc"
 )
 
@@ -31,8 +31,9 @@ func main() {
 	}
 
 	s := grpc.NewServer()
+	defer s.Stop()
 
-	gostorepb.RegisterGoStoreServer(s, store.New())
+	pb.RegisterGoStoreServer(s, store.New())
 
 	if err = s.Serve(listener); err != nil {
 		log.Fatalf("Failed to serve %v", err)

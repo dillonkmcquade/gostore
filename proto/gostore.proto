@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/dillonkmcquade/gostore/gostorepb";
+option go_package = "github.com/dillonkmcquade/gostore/internal/pb";
 
 service GoStore {
   rpc Write(WriteRequest) returns (WriteReply) {};

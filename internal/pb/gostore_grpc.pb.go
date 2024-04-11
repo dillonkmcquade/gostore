@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.2.0
 // - protoc             v3.19.6
-// source: grpc/gostore.proto
+// source: gostore.proto
 
-package gostorepb
+package pb
 
 import (
 	context "context"
@@ -209,5 +209,5 @@ var GoStore_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "grpc/gostore.proto",
+	Metadata: "gostore.proto",
 }

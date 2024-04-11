@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option go_package = "github.com/dillonkmcquade/gostore/gostorepb";
+
+service GoStore {
+  rpc Write(WriteRequest) returns (WriteReply) {};
+  rpc Read(ReadRequest) returns (ReadReply) {};
+  rpc Update(WriteRequest) returns (WriteReply) {};
+  rpc Delete(ReadRequest) returns (WriteReply) {};
+}
+
+message WriteRequest {
+  string key = 1;
+  string payload = 2;
+}
+message WriteReply {
+  bool status = 1;
+  string message = 2;
+}
+
+message ReadRequest { string key = 1; }
+
+message ReadReply { string value = 1; }

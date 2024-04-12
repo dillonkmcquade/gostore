@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 
+	"github.com/dillonkmcquade/gostore/internal/interceptors"
 	"github.com/dillonkmcquade/gostore/internal/pb"
 	"github.com/dillonkmcquade/gostore/internal/store"
 	"google.golang.org/grpc"
@@ -21,6 +22,7 @@ var (
 
 func main() {
 	flag.Parse()
+
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
@@ -32,8 +34,6 @@ func main() {
 		}
 		defer pprof.StopCPUProfile()
 	}
-
-	// ... rest of the program ...
 
 	if *memprofile != "" {
 		f, err := os.Create(*memprofile)
@@ -61,8 +61,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	s := grpc.NewServer()
+	s := grpc.NewServer(grpc.ChainUnaryInterceptor(interceptors.Logger))
 	defer s.Stop()
 
 	pb.RegisterGoStoreServer(s, store.New())

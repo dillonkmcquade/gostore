@@ -13,6 +13,8 @@ message WriteRequest {
   string key = 1;
   bytes payload = 2;
   string type = 3;
+  // time in seconds until record expires
+  int32 expiration = 4;
 }
 
 message WriteReply {

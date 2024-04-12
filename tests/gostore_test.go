@@ -57,7 +57,7 @@ func TestType(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := client.Write(ctx, &pb.WriteRequest{Key: "somekey", Payload: []byte("delete"), Type: pb.Type_STRING.String()})
+	_, err := client.Write(ctx, &pb.WriteRequest{Key: "somekey", Payload: []byte("delete"), Type: pb.Type_STRING.String(), Expiration: 5})
 	if err != nil {
 		t.Error(err)
 	}
@@ -77,7 +77,7 @@ func TestDelete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := client.Write(ctx, &pb.WriteRequest{Key: "delete", Payload: []byte("delete"), Type: pb.Type_STRING.String()})
+	_, err := client.Write(ctx, &pb.WriteRequest{Key: "delete", Payload: []byte("delete"), Type: pb.Type_STRING.String(), Expiration: 5})
 	if err != nil {
 		t.Error(err)
 	}
@@ -98,7 +98,7 @@ func TestClean(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	_, err := client.Write(ctx, &pb.WriteRequest{Key: "timed", Payload: []byte{1}, Type: pb.Type_BOOL.String()})
+	_, err := client.Write(ctx, &pb.WriteRequest{Key: "timed", Payload: []byte{1}, Type: pb.Type_BOOL.String(), Expiration: 5})
 	if err != nil {
 		t.Error(err)
 	}

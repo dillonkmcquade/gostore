@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"github.com/dillonkmcquade/gostore/internal/pb"
 	"google.golang.org/grpc/codes"
@@ -18,24 +17,16 @@ func New() *GoStore {
 	return &GoStore{DB: &DataStore{data: make(map[string]RawRecord)}}
 }
 
-// Removes the record from the store after the specified time
-func (self *GoStore) Clean(key string, t time.Duration) {
-	time.Sleep(t)
-	self.DB.delete(key)
-}
-
 func (self *GoStore) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	if self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.AlreadyExists, "Existing key found")
 	}
-	err := self.DB.write(in.Key, in.Payload, in.Type)
 
-	// TODO: Update Write declaraction in .proto file to accept a time in minutes
-	go self.Clean(in.Key, 5*time.Second)
-
+	err := self.DB.write(in)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
 	return &pb.WriteReply{Status: true, Message: "Success"}, nil
 }
 
@@ -62,6 +53,10 @@ func (self *GoStore) Update(ctx context.Context, in *pb.WriteRequest) (*pb.Write
 	if !self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.NotFound, "Key not found")
 	}
-	self.DB.write(in.Key, in.Payload, in.Type)
+	err := self.DB.write(in)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	return &pb.WriteReply{Status: true, Message: "Success"}, nil
 }

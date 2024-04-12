@@ -3,7 +3,7 @@ SHELL = /bin/sh
 debug := GRPC_GO_LOG_VERBOSITY_LEVEL=99 GRPC_GO_LOG_SEVERITY_LEVEL=info
 
 build:
-	go build -o gostore cmd/gostore 
+	go build -o gostore cmd/gostore/main.go
 
 proto-compile:
 	protoc -I=proto --go_out=internal/pb --go_opt=paths=source_relative \
@@ -17,7 +17,7 @@ clean:
 	rm gostore
 
 test: 
-	go test -v ./...
+	go test -v ./... -count=1
 
 
 .PHONY: run build clean test proto-compile

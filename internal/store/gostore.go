@@ -14,7 +14,7 @@ type GoStore struct {
 }
 
 func New() *GoStore {
-	return &GoStore{DB: &DataStore{data: make(map[string]RawRecord)}}
+	return &GoStore{DB: &DataStore{data: make(map[string]RawRecord), cancelChans: make(map[string]chan bool)}}
 }
 
 func (self *GoStore) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {

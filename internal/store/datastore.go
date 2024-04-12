@@ -8,13 +8,7 @@ import (
 	"github.com/dillonkmcquade/gostore/internal/pb"
 )
 
-type (
-	RawRecord []byte // First byte represents the type, followed by the payload
-	Record    struct {
-		RecordType string // The string representation of pb.Type, indicates the type of the payload
-		Payload    []byte
-	}
-)
+type RawRecord []byte // First byte represents the type, followed by the payload
 
 type DataStore struct {
 	mut  sync.RWMutex
@@ -40,26 +34,26 @@ func (self *DataStore) hasKey(key string) bool {
 	return hasKey
 }
 
-func (self *DataStore) read(key string) (*Record, error) {
+func (self *DataStore) read(key string) (*pb.Record, error) {
 	self.mut.RLock()
 	v := self.data[key]
 	self.mut.RUnlock()
 	return decodeRawRecord(v)
 }
 
+func (self *DataStore) delete(key string) {
+	self.mut.Lock()
+	delete(self.data, key)
+	self.mut.Unlock()
+}
+
 // Decodes a byte array into a Record
-func decodeRawRecord(r []byte) (*Record, error) {
+func decodeRawRecord(r []byte) (*pb.Record, error) {
 	t := int32(r[0])
 	payload := r[1:]
 	typ, ok := pb.Type_name[t]
 	if !ok {
 		return nil, errors.New("Error decoding type information from raw record")
 	}
-	return &Record{Payload: payload, RecordType: typ}, nil
-}
-
-func (self *DataStore) delete(key string) {
-	self.mut.Lock()
-	delete(self.data, key)
-	self.mut.Unlock()
+	return &pb.Record{Payload: payload, Type: typ}, nil
 }

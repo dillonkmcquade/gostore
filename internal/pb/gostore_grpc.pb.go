@@ -23,7 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type GoStoreClient interface {
 	Write(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteReply, error)
-	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadReply, error)
+	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*Record, error)
 	Update(ctx context.Context, in *WriteRequest, opts ...grpc.CallOption) (*WriteReply, error)
 	Delete(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*WriteReply, error)
 }
@@ -45,8 +45,8 @@ func (c *goStoreClient) Write(ctx context.Context, in *WriteRequest, opts ...grp
 	return out, nil
 }
 
-func (c *goStoreClient) Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadReply, error) {
-	out := new(ReadReply)
+func (c *goStoreClient) Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*Record, error) {
+	out := new(Record)
 	err := c.cc.Invoke(ctx, "/GoStore/Read", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (c *goStoreClient) Delete(ctx context.Context, in *ReadRequest, opts ...grp
 // for forward compatibility
 type GoStoreServer interface {
 	Write(context.Context, *WriteRequest) (*WriteReply, error)
-	Read(context.Context, *ReadRequest) (*ReadReply, error)
+	Read(context.Context, *ReadRequest) (*Record, error)
 	Update(context.Context, *WriteRequest) (*WriteReply, error)
 	Delete(context.Context, *ReadRequest) (*WriteReply, error)
 	mustEmbedUnimplementedGoStoreServer()
@@ -90,7 +90,7 @@ type UnimplementedGoStoreServer struct {
 func (UnimplementedGoStoreServer) Write(context.Context, *WriteRequest) (*WriteReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Write not implemented")
 }
-func (UnimplementedGoStoreServer) Read(context.Context, *ReadRequest) (*ReadReply, error) {
+func (UnimplementedGoStoreServer) Read(context.Context, *ReadRequest) (*Record, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Read not implemented")
 }
 func (UnimplementedGoStoreServer) Update(context.Context, *WriteRequest) (*WriteReply, error) {

@@ -90,3 +90,21 @@ func TestDelete(t *testing.T) {
 		t.Error("Should return error")
 	}
 }
+
+func TestClean(t *testing.T) {
+	conn, client := getGRPCClient(t)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	_, err := client.Write(ctx, &pb.WriteRequest{Key: "timed", Payload: []byte{1}, Type: pb.Type_BOOL.String()})
+	if err != nil {
+		t.Error(err)
+	}
+	time.Sleep(6 * time.Second)
+	_, err = client.Read(ctx, &pb.ReadRequest{Key: "timed"})
+	if err == nil {
+		t.Error("Lifetime should have expired")
+	}
+}

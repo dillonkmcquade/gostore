@@ -11,7 +11,8 @@ service GoStore {
 
 message WriteRequest {
   string key = 1;
-  string payload = 2;
+  bytes payload = 2;
+  string type = 3;
 }
 message WriteReply {
   bool status = 1;
@@ -20,4 +21,15 @@ message WriteReply {
 
 message ReadRequest { string key = 1; }
 
-message ReadReply { string value = 1; }
+message ReadReply {
+  bytes payload = 1;
+  // A string representation of the type, will map to enum Type
+  string type = 2;
+}
+
+enum Type {
+  STRING = 0;
+  INTEGER = 1;
+  BYTES = 2;
+  BOOL = 3;
+}

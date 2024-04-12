@@ -49,3 +49,44 @@ func TestError(t *testing.T) {
 		}
 	}
 }
+
+func TestType(t *testing.T) {
+	conn, client := getGRPCClient(t)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := client.Write(ctx, &pb.WriteRequest{Key: "somekey", Payload: []byte("delete"), Type: pb.Type_STRING.String()})
+	if err != nil {
+		t.Error(err)
+	}
+	response, err := client.Read(ctx, &pb.ReadRequest{Key: "somekey"})
+	if err != nil {
+		t.Error("Should return error")
+	}
+	if response.Type != pb.Type_STRING.String() {
+		t.Error("Type should be STRING")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	conn, client := getGRPCClient(t)
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := client.Write(ctx, &pb.WriteRequest{Key: "delete", Payload: []byte("delete"), Type: pb.Type_STRING.String()})
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = client.Delete(ctx, &pb.ReadRequest{Key: "delete"})
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = client.Read(ctx, &pb.ReadRequest{Key: "delete"})
+	if err == nil {
+		t.Error("Should return error")
+	}
+}

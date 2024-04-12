@@ -20,8 +20,5 @@
 # Go workspace file
 go.work
 
-# binary
-./gostore
-
 # output of profiling tool pprof
 *.prof

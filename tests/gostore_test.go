@@ -17,6 +17,7 @@ func getGRPCClient(t *testing.T) (*grpc.ClientConn, pb.GoStoreClient) {
 	if err != nil {
 		t.Errorf("Error on net.Dial: %s", err)
 	}
+
 	c := pb.NewGoStoreClient(conn)
 	return conn, c
 }

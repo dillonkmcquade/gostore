@@ -17,46 +17,98 @@ func New() *GoStore {
 	return &GoStore{DB: &DataStore{data: make(map[string]RawRecord), cancelChans: make(map[string]chan bool)}}
 }
 
+// TODO handle ctx
 func (self *GoStore) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	if self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.AlreadyExists, "Existing key found")
 	}
 
-	err := self.DB.write(in)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
+	done := make(chan error, 1)
+	go self.DB.write(in, done)
 
-	return &pb.WriteReply{Status: true, Message: "Success"}, nil
+	select {
+	case err := <-done:
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return &pb.WriteReply{Status: true, Message: "Success"}, nil
+	case <-ctx.Done():
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			return nil, status.Error(codes.DeadlineExceeded, "Exceeded time limit")
+		case context.Canceled:
+			return nil, status.Error(codes.Canceled, "Request Cancelled")
+		}
+	}
+	return nil, nil
 }
 
 func (self *GoStore) Read(ctx context.Context, in *pb.ReadRequest) (*pb.Record, error) {
 	if !self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.NotFound, "Key not found")
 	}
-	r, err := self.DB.read(in.Key)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "An error occurred while reading from database: %v", err)
+	done := make(chan any, 1)
+	go self.DB.read(in.Key, done)
+	select {
+	case result := <-done:
+		switch r := result.(type) {
+		case *pb.Record:
+			return r, nil
+		case error:
+			return nil, status.Errorf(codes.Internal, "Error reading from database: %v", r.Error())
+		}
+	case <-ctx.Done():
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			return nil, status.Error(codes.DeadlineExceeded, "Exceeded time limit")
+		case context.Canceled:
+			return nil, status.Error(codes.Canceled, "Request Cancelled")
+		}
 	}
-	return r, nil
+	return nil, nil
 }
 
 func (self *GoStore) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.WriteReply, error) {
 	if !self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.NotFound, "Key not found")
 	}
-	self.DB.delete(in.Key)
-	return &pb.WriteReply{Status: true, Message: "Success"}, nil
+	done := make(chan bool, 1)
+	go self.DB.delete(in.Key, done)
+	select {
+	case <-done:
+		return &pb.WriteReply{Status: true, Message: "Success"}, nil
+	case <-ctx.Done():
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			return nil, status.Error(codes.DeadlineExceeded, "Exceeded time limit")
+		case context.Canceled:
+			return nil, status.Error(codes.Canceled, "Request Cancelled")
+		}
+	}
+
+	return nil, nil
 }
 
 func (self *GoStore) Update(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	if !self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.NotFound, "Key not found")
 	}
-	err := self.DB.write(in)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
+	done := make(chan error, 1)
+	go self.DB.write(in, done)
 
-	return &pb.WriteReply{Status: true, Message: "Success"}, nil
+	select {
+	case err := <-done:
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return &pb.WriteReply{Status: true, Message: "Success"}, nil
+	case <-ctx.Done():
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			return nil, status.Error(codes.DeadlineExceeded, "Exceeded time limit")
+		case context.Canceled:
+			return nil, status.Error(codes.Canceled, "Request Cancelled")
+		}
+	}
+	return nil, nil
 }

@@ -21,11 +21,12 @@ type DataStore struct {
 	cancelChans map[string]chan bool
 }
 
-func (self *DataStore) write(in *pb.WriteRequest) error {
+func (self *DataStore) write(in *pb.WriteRequest, errChan chan<- error) {
 	typeValue, ok := pb.Type_value[in.Type]
 
 	if !ok {
-		return errors.New(fmt.Sprintf("Invalid type %v", in.Type))
+		errChan <- errors.New(fmt.Sprintf("Invalid type %v", in.Type))
+		return
 	}
 
 	b := byte(typeValue)
@@ -37,7 +38,7 @@ func (self *DataStore) write(in *pb.WriteRequest) error {
 	self.data[in.Key] = in.Payload
 
 	// Create stop channel for destroying Clean routine later
-	stopChan := make(chan bool)
+	stopChan := make(chan bool, 1)
 	self.cancelChans[in.Key] = stopChan
 
 	self.mut.Unlock()
@@ -45,7 +46,7 @@ func (self *DataStore) write(in *pb.WriteRequest) error {
 	expirationCtx, cancel := context.WithTimeout(context.Background(), time.Duration(in.Expiration)*time.Second)
 	go self.Clean(expirationCtx, cancel, in.Key, stopChan)
 
-	return nil
+	close(errChan)
 }
 
 func (self *DataStore) hasKey(key string) bool {
@@ -53,15 +54,20 @@ func (self *DataStore) hasKey(key string) bool {
 	return hasKey
 }
 
-func (self *DataStore) read(key string) (*pb.Record, error) {
+func (self *DataStore) read(key string, done chan<- any) {
 	self.mut.RLock()
 	v := self.data[key]
 	self.mut.RUnlock()
-	return marshalRecord(v)
+	r, err := marshalRecord(v)
+	if err != nil {
+		done <- err
+		return
+	}
+	done <- r
 }
 
 // Removes the record from the store and all associated resources (stopChan & Clean routine)
-func (self *DataStore) delete(key string) {
+func (self *DataStore) delete(key string, done chan<- bool) {
 	self.mut.Lock()
 
 	delete(self.data, key)
@@ -71,6 +77,7 @@ func (self *DataStore) delete(key string) {
 	delete(self.cancelChans, key)
 
 	self.mut.Unlock()
+	done <- true
 }
 
 // Asynchronously waits to remove the record from the store after the specified time.
@@ -80,7 +87,10 @@ func (self *DataStore) Clean(ctx context.Context, cancel context.CancelFunc, key
 	for {
 		select {
 		case <-ctx.Done():
-			self.delete(key)
+			// TODO would be nice to find a way to not need a channel in this situation
+			done := make(chan bool, 1)
+			self.delete(key, done)
+			<-done
 			return
 		case <-stop:
 			cancel()

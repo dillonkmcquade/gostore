@@ -6,38 +6,18 @@ import (
 )
 
 type Node[K cmp.Ordered, V any] struct {
-	left, right, parent  *Node[K, V]
-	Key                  K
-	Value                V
-	isLeftChild, isBlack bool
+	left, right, parent *Node[K, V]
+	Key                 K
+	Value               V
+	isBlack             bool
 }
 
-func (node *Node[K, V]) uncle() *Node[K, V] {
-	if node == nil || node.parent == nil || node.parent.parent == nil {
-		return nil
-	}
-	return node.parent.sibling()
-}
-
-func (node *Node[K, V]) sibling() *Node[K, V] {
-	if node == nil || node.parent == nil {
-		return nil
-	}
-	if node == node.parent.left {
-		return node.parent.right
-	}
-	return node.parent.left
-}
-
-func (node *Node[K, V]) grandparent() *Node[K, V] {
-	if node == nil || node.parent == nil || node.parent.parent == nil {
-		return nil
-	}
-	return node.parent.parent
+func (node *Node[K, V]) String() string {
+	return fmt.Sprintf("Node(black: %v) {%v %v}", node.isBlack, node.Key, node.Value)
 }
 
 func newNode[K cmp.Ordered, V any](key K, val V) *Node[K, V] {
-	return &Node[K, V]{isLeftChild: false, isBlack: false, Key: key, Value: val, left: nil, right: nil, parent: nil}
+	return &Node[K, V]{isBlack: false, Key: key, Value: val, left: nil, right: nil, parent: nil}
 }
 
 type RBTIterator[K cmp.Ordered, V any] struct {
@@ -45,20 +25,20 @@ type RBTIterator[K cmp.Ordered, V any] struct {
 	index int
 }
 
-func (self *RBTIterator[K, V]) HasNext() bool {
-	return self.index < len(self.nodes)
+func (iter *RBTIterator[K, V]) HasNext() bool {
+	return iter.index < len(iter.nodes)
 }
 
-func (self *RBTIterator[K, V]) Next() *Node[K, V] {
-	if self.HasNext() {
-		node := self.nodes[self.index]
-		self.index++
+func (iter *RBTIterator[K, V]) Next() *Node[K, V] {
+	if iter.HasNext() {
+		node := iter.nodes[iter.index]
+		iter.index++
 		return node
 	}
 	return nil
 }
 
-func NewRBTIterator[K cmp.Ordered, V any](root *Node[K, V], size uint) *RBTIterator[K, V] {
+func newRBTIterator[K cmp.Ordered, V any](root *Node[K, V], size uint) *RBTIterator[K, V] {
 	list := make([]*Node[K, V], 0, size)
 	sortedNodeList(root, &list)
 	return &RBTIterator[K, V]{nodes: list}
@@ -79,37 +59,42 @@ type RedBlackTree[K cmp.Ordered, V any] struct {
 	root *Node[K, V]
 }
 
-func (self *RedBlackTree[K, V]) Iterator() Iterator[K, V] {
-	return NewRBTIterator(self.root, self.Size())
+func (rbt *RedBlackTree[K, V]) Iterator() Iterator[K, V] {
+	return newRBTIterator(rbt.root, rbt.Size())
 }
 
 func NewRedBlackTree() MemTable[int, any] {
 	return &RedBlackTree[int, any]{}
 }
 
-func (self *RedBlackTree[K, V]) Size() uint {
-	return self.size
+func (rbt *RedBlackTree[K, V]) Size() uint {
+	return rbt.size
+}
+
+func (rbt *RedBlackTree[K, V]) Clear() {
+	rbt.root = nil
+	rbt.size = 0
 }
 
 // For debugging
-func (self *RedBlackTree[K, V]) printTree(root *Node[K, V], space int) {
+func (rbt *RedBlackTree[K, V]) printTree(root *Node[K, V], space int) {
 	if root != nil {
 		space = space + 10
-		self.printTree(root.right, space)
+		rbt.printTree(root.right, space)
 		fmt.Println("")
 		for i := 10; i < space; i++ {
 			fmt.Printf(" ")
 		}
 		fmt.Printf("%v", root.isBlack) // Print colors or keys
 		fmt.Println("")
-		self.printTree(root.left, space)
+		rbt.printTree(root.left, space)
 	}
 }
 
-func (self *RedBlackTree[K, V]) Put(key K, val V) {
-	self.root = self.put(self.root, key, val)
-	self.size++
-	self.root.isBlack = true
+func (rbt *RedBlackTree[K, V]) Put(key K, val V) {
+	rbt.root = rbt.put(rbt.root, key, val)
+	rbt.size++
+	rbt.root.isBlack = true
 }
 
 func isRed[K cmp.Ordered, V any](node *Node[K, V]) bool {
@@ -119,39 +104,39 @@ func isRed[K cmp.Ordered, V any](node *Node[K, V]) bool {
 	return !node.isBlack
 }
 
-func (self *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V) *Node[K, V] {
+func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V) *Node[K, V] {
 	if node == nil {
 		return newNode(key, val)
 	}
 	comp := cmp.Compare(key, node.Key)
 	if comp < 0 {
-		node.left = self.put(node.left, key, val)
+		node.left = rbt.put(node.left, key, val)
 	} else if comp > 0 {
-		node.right = self.put(node.right, key, val)
+		node.right = rbt.put(node.right, key, val)
 	} else {
 		node.Value = val
 	}
 
 	if isRed(node.right) && !isRed(node.left) {
-		node = self.leftRotate(node)
+		node = rbt.leftRotate(node)
 	}
 	if isRed(node.left) && isRed(node.left.left) {
-		node = self.rightRotate(node)
+		node = rbt.rightRotate(node)
 	}
 	if isRed(node.left) && isRed(node.right) {
-		self.colorFlip(node)
+		rbt.colorFlip(node)
 	}
 
 	return node
 }
 
-func (self *RedBlackTree[K, V]) colorFlip(node *Node[K, V]) {
+func (rbt *RedBlackTree[K, V]) colorFlip(node *Node[K, V]) {
 	node.isBlack = false
 	node.left.isBlack = true
 	node.right.isBlack = true
 }
 
-func (self *RedBlackTree[K, V]) rightRotate(node *Node[K, V]) *Node[K, V] {
+func (rbt *RedBlackTree[K, V]) rightRotate(node *Node[K, V]) *Node[K, V] {
 	tmp := node.left
 	node.left = tmp.right
 	tmp.right = node
@@ -160,7 +145,7 @@ func (self *RedBlackTree[K, V]) rightRotate(node *Node[K, V]) *Node[K, V] {
 	return tmp
 }
 
-func (self *RedBlackTree[K, V]) leftRotate(node *Node[K, V]) *Node[K, V] {
+func (rbt *RedBlackTree[K, V]) leftRotate(node *Node[K, V]) *Node[K, V] {
 	tmp := node.right
 	node.right = tmp.left
 	tmp.left = node

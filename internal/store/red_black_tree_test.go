@@ -71,6 +71,28 @@ func TestInsertDescendingOrder(t *testing.T) {
 		key   int
 		value string
 	}{
+		{7, "value5"},
+		{6, "value5"},
+		{5, "value5"},
+		{4, "value4"},
+		{3, "value3"},
+		{2, "value2"},
+		{1, "value1"},
+	}
+	for _, element := range elements {
+		tree.Put(element.key, element.value)
+	}
+	if tree.Size() != 7 {
+		t.Error("Should be 7")
+	}
+}
+
+func TestIteratorDescending(t *testing.T) {
+	tree := &RedBlackTree[int, any]{}
+	elements := []struct {
+		key   int
+		value string
+	}{
 		{5, "value5"},
 		{4, "value4"},
 		{3, "value3"},
@@ -95,7 +117,7 @@ func TestInsertDescendingOrder(t *testing.T) {
 	}
 }
 
-func TestIterator(t *testing.T) {
+func TestIteratorAscending(t *testing.T) {
 	tree := &RedBlackTree[int, any]{}
 	elements := []struct {
 		key   int

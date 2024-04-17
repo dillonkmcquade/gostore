@@ -29,6 +29,7 @@ type WAL[K cmp.Ordered, V any] struct {
 	mut     sync.Mutex
 }
 
+// Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
 func NewWal[K cmp.Ordered, V any](filename string) (*WAL[K, V], error) {
 	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
 	return &WAL[K, V]{file: file, encoder: gob.NewEncoder(file)}, err
@@ -48,7 +49,7 @@ func (self *WAL[K, V]) Discard() error {
 
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
-	entry := &LogEntry[K, V]{Key: key, Value: val}
+	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: "insert"}
 	self.mut.Lock()
 	err := self.encoder.Encode(entry)
 	if err != nil {

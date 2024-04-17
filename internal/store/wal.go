@@ -7,17 +7,24 @@ import (
 	"sync"
 )
 
+type Operation int
+
+const (
+	INSERT Operation = iota
+	DELETE
+)
+
 type LogEntry[K cmp.Ordered, V any] struct {
-	Operation string
+	Operation Operation
 	Key       K
 	Value     V
 }
 
 func (self *LogEntry[K, V]) Apply(lsm LSMTree[K, V]) error {
 	switch self.Operation {
-	case "insert":
+	case INSERT:
 		lsm.Write(self.Key, self.Value)
-	case "delete":
+	case DELETE:
 		lsm.Delete(self.Key)
 	}
 	return nil
@@ -49,7 +56,7 @@ func (self *WAL[K, V]) Discard() error {
 
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
-	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: "insert"}
+	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}
 	self.mut.Lock()
 	err := self.encoder.Encode(entry)
 	if err != nil {

@@ -153,3 +153,21 @@ func (rbt *RedBlackTree[K, V]) leftRotate(node *Node[K, V]) *Node[K, V] {
 	node.isBlack = false
 	return tmp
 }
+
+func (rbt *RedBlackTree[K, V]) Get(key K) (V, bool) {
+	node := rbt.root
+	return rbt.get(node, key)
+}
+
+func (rbt *RedBlackTree[K, V]) get(node *Node[K, V], key K) (V, bool) {
+	if node == nil {
+		return Node[K, V]{}.Value, false
+	}
+	if key > node.Key {
+		return rbt.get(node.right, key)
+	} else if key < node.Key {
+		return rbt.get(node.left, key)
+	} else {
+		return node.Value, true
+	}
+}

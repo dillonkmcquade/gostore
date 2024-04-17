@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-var WALPATH = filepath.Join("home", "$USER", "programming", "gostore", "WAL.db")
-
 // A smallest-to-largest Node iterator
 type Iterator[K cmp.Ordered, V any] interface {
 	HasNext() bool
@@ -49,11 +47,29 @@ type LSMTree[K cmp.Ordered, V any] interface {
 	Flush()
 }
 
+// Creates a new LSMTree. Creates a cache directory under the
+// users XDG_CACHE_DIR to store data if it does not exist
 func NewLSMTree[K cmp.Ordered, V any]() LSMTree[K, V] {
-	wal, err := NewWal[K, V](WALPATH)
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		panic("XDG_CACHE_DIR does not exist") // Directory must exist
+	}
+
+	gostorePath := filepath.Join(cacheDir, "gostore")
+
+	_, err = os.Stat(gostorePath)
+	if os.IsNotExist(err) {
+		err = os.Mkdir(gostorePath, 0644)
+		if err != nil {
+			panic(err) // Directory must exist in order to store data files
+		}
+	}
+
+	wal, err := NewWal[K, V](filepath.Join(gostorePath, "wal.db"))
 	if err != nil {
 		panic(err)
 	}
+
 	return &GoStore[K, V]{memTable: &RedBlackTree[K, V]{}, wal: wal}
 }
 

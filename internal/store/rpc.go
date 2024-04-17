@@ -8,17 +8,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type GoStore struct {
+type GoStoreRPC struct {
 	pb.UnimplementedGoStoreServer
 	DB *DataStore
 }
 
-func New() *GoStore {
-	return &GoStore{DB: &DataStore{data: make(map[string]RawRecord), cancelChans: make(map[string]chan bool)}}
+func New() *GoStoreRPC {
+	return &GoStoreRPC{DB: &DataStore{data: make(map[string]RawRecord), cancelChans: make(map[string]chan bool)}}
 }
 
 // TODO handle ctx
-func (self *GoStore) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
+func (self *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	if self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.AlreadyExists, "Existing key found")
 	}
@@ -43,7 +43,7 @@ func (self *GoStore) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteR
 	return nil, nil
 }
 
-func (self *GoStore) Read(ctx context.Context, in *pb.ReadRequest) (*pb.Record, error) {
+func (self *GoStoreRPC) Read(ctx context.Context, in *pb.ReadRequest) (*pb.Record, error) {
 	if !self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.NotFound, "Key not found")
 	}
@@ -68,7 +68,7 @@ func (self *GoStore) Read(ctx context.Context, in *pb.ReadRequest) (*pb.Record, 
 	return nil, nil
 }
 
-func (self *GoStore) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.WriteReply, error) {
+func (self *GoStoreRPC) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.WriteReply, error) {
 	if !self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.NotFound, "Key not found")
 	}
@@ -89,7 +89,7 @@ func (self *GoStore) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.WriteR
 	return nil, nil
 }
 
-func (self *GoStore) Update(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
+func (self *GoStoreRPC) Update(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	if !self.DB.hasKey(in.Key) {
 		return nil, status.Error(codes.NotFound, "Key not found")
 	}

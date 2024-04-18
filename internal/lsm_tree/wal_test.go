@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestWrite(t *testing.T) {
+func TestWALWrite(t *testing.T) {
 	tmpdir := t.TempDir()
 	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
 	if err != nil {
@@ -21,7 +21,7 @@ func TestWrite(t *testing.T) {
 	}
 }
 
-func TestDecode(t *testing.T) {
+func TestWALDecode(t *testing.T) {
 	tmpdir := t.TempDir()
 	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -45,17 +46,16 @@ type GoStore[K cmp.Ordered, V any] struct {
 	mut sync.RWMutex
 }
 
-// Creates a new LSMTree. Creates a cache directory under the
-// users XDG_CACHE_DIR to store data if it does not exist.
+// Creates a new LSMTree. Creates ~/.gostore if it does not exist.
 //
-// ***Will panic if error is returned during any of the initialization steps.
+// ***Will exit with non-zero status if error is returned during any of the initialization steps.
 func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 	// Create ~/.gostore
 	_, err := os.Stat(gostorePath)
 	if os.IsNotExist(err) {
 		err = os.Mkdir(gostorePath, 0777)
 		if err != nil {
-			panic(err) // Directory must exist in order to store data files
+			log.Fatal(err) // Directory must exist in order to store data files
 		}
 	}
 
@@ -64,22 +64,12 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 	if os.IsNotExist(err) {
 		err = os.Mkdir(segmentDir, 0777)
 		if err != nil {
-			panic(err) // Directory must exist in order to store data files
+			log.Fatal(err) // Directory must exist in order to store data files
 		}
 	}
 
 	// TREE
 	tree := newRedBlackTree[K, V]()
-
-	// WAL
-	wal, err := newWal[K, V](walPath)
-	if err != nil {
-		if pathError, ok := err.(*os.PathError); ok {
-			fmt.Printf("Path error: %v", pathError.Error())
-			os.Exit(1)
-		}
-		panic(err)
-	}
 
 	// BLOOMFILTER
 	var bloom *BloomFilter[K]
@@ -88,11 +78,32 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 		if _, ok := err.(*os.PathError); ok {
 			bloom = NewBloomFilter[K](BLOOM_SIZE, NUM_HASH_FUNCS)
 		} else {
-			panic(err)
+			log.Fatal(err)
 		}
 	}
 
-	return &GoStore[K, V]{memTable: tree, wal: wal, bloom: bloom, max_size: maxSize}
+	db := &GoStore[K, V]{memTable: tree, bloom: bloom, max_size: maxSize}
+	db.wal, err = newWal[K, V](walPath)
+	if err != nil {
+		log.Fatalf("Failed to create new WAL: %s", err)
+	}
+
+	// Recreate previous state if a wal.dat exists
+	err = db.Replay(walPath)
+	if err != nil && err != io.EOF {
+		switch e := err.(type) {
+		case *LogApplyErr[K, V]:
+			fmt.Println("ERROR WHILE RECREATING DATABASE STATE FROM WRITE AHEAD LOG.")
+			fmt.Printf("POSSIBLE DATA LOSS HAS OCCURRED: %v\n", e.Error())
+		case *os.PathError:
+			goto end
+		default:
+			log.Fatalf("Error on WAL replay: %v", err)
+		}
+	}
+	// Create new WAL
+end:
+	return db
 }
 
 // Iterate over segments from newest to oldest
@@ -149,6 +160,10 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 
 	// Write to memTable
 	self.memTable.Put(key, val)
+	err := self.wal.Write(key, val)
+	if err != nil {
+		return err
+	}
 	self.bloom.Add(key)
 	if self.exceeds_size() {
 		go self.flush()
@@ -198,17 +213,31 @@ func (self *GoStore[K, V]) Replay(filename string) error {
 
 	dec := gob.NewDecoder(file)
 	for {
-		var entry LogEntry[K, V]
-		if err := dec.Decode(&entry); err != nil {
+		entry := &LogEntry[K, V]{}
+		if err = dec.Decode(entry); err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Println(err)
 			break // End of log file
 		}
+
 		// Apply the entry to the database
-		entry.Apply(self)
+		switch entry.Operation {
+		case INSERT:
+			self.memTable.Put(entry.Key, entry.Value)
+		case DELETE:
+			panic("Unimplemented")
+		}
 	}
-	return nil
+	return err
 }
 
 func (self *GoStore[K, V]) Clean() error {
+	err := self.Close()
+	if err != nil {
+		return nil
+	}
 	return os.Remove(walPath)
 }
 

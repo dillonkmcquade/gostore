@@ -34,6 +34,8 @@ type LSMTree[K cmp.Ordered, V any] interface {
 	Delete(K) error
 	// Release associated resources
 	Close() error
-	// For debugging: Remove created files
+	// For debugging/tests: Use instead of Close to remove created files and release resources
 	Clean() error
+	// Recreate the memtable from WAL
+	Replay(string) error
 }

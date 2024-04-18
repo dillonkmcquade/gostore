@@ -3,6 +3,7 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
+	"fmt"
 	"os"
 	"sync"
 )
@@ -21,11 +22,15 @@ type LogEntry[K cmp.Ordered, V any] struct {
 }
 
 func (self *LogEntry[K, V]) Apply(lsm LSMTree[K, V]) error {
+	var err error
 	switch self.Operation {
 	case INSERT:
-		lsm.Write(self.Key, self.Value)
+		err = lsm.Write(self.Key, self.Value)
 	case DELETE:
-		lsm.Delete(self.Key)
+		err = lsm.Delete(self.Key)
+	}
+	if err != nil {
+		return &LogApplyErr[K, V]{Entry: self, Cause: err}
 	}
 	return nil
 }
@@ -57,12 +62,12 @@ func (self *WAL[K, V]) Discard() error {
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
 	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}
-	self.mut.Lock()
 	err := self.encoder.Encode(entry)
 	if err != nil {
 		return err
 	}
 	// Ensure the entry is flushed to disk immediately.
+	self.mut.Lock()
 	err = self.file.Sync()
 	self.mut.Unlock()
 	return err
@@ -71,4 +76,15 @@ func (self *WAL[K, V]) Write(key K, val V) error {
 // Close closes the Write-Ahead Log file.
 func (self *WAL[K, V]) Close() error {
 	return self.file.Close()
+}
+
+// LogApplyErr is returned when a log entry failed to be applied to be applied.
+// This could indicate that some data was lost after a crash.
+type LogApplyErr[K cmp.Ordered, V any] struct {
+	Entry *LogEntry[K, V]
+	Cause error
+}
+
+func (l *LogApplyErr[K, V]) Error() string {
+	return fmt.Sprintf("Error applying log entry operation '%v' with key %v and value %v: %v", l.Entry.Operation, l.Entry.Key, l.Entry.Value, l.Cause)
 }

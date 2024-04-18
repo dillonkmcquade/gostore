@@ -11,10 +11,10 @@ import (
 func TestWrite(t *testing.T) {
 	tmpdir := t.TempDir()
 	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
-	defer wal.Close()
 	if err != nil {
 		t.Error(err)
 	}
+	defer wal.Close()
 	err = wal.Write(5, "Helloworld")
 	if err != nil {
 		t.Error("error on Write:14")
@@ -24,20 +24,20 @@ func TestWrite(t *testing.T) {
 func TestDecode(t *testing.T) {
 	tmpdir := t.TempDir()
 	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
-	defer wal.Close()
 	if err != nil {
 		t.Error(err)
 	}
+	defer wal.Close()
 	err = wal.Write(5, "Helloworld")
 	if err != nil {
 		t.Error(err)
 	}
 
 	file, err := os.Open(filepath.Join(tmpdir, "wal.db"))
-	defer file.Close()
 	if err != nil {
 		t.Error(err)
 	}
+	defer file.Close()
 	dec := gob.NewDecoder(file)
 
 	var entry LogEntry[int, any]

@@ -1,4 +1,4 @@
-package store
+package lsm_tree
 
 import (
 	"encoding/gob"
@@ -10,7 +10,7 @@ import (
 
 func TestWrite(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := NewWal[int, any](filepath.Join(tmpdir, "wal.db"))
+	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
 	defer wal.Close()
 	if err != nil {
 		t.Error(err)
@@ -23,7 +23,7 @@ func TestWrite(t *testing.T) {
 
 func TestDecode(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := NewWal[int, any](filepath.Join(tmpdir, "wal.db"))
+	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
 	defer wal.Close()
 	if err != nil {
 		t.Error(err)

@@ -1,4 +1,4 @@
-package store
+package lsm_tree
 
 import (
 	"cmp"
@@ -16,10 +16,12 @@ type SSTableEntry[K cmp.Ordered, V any] struct {
 // SSTable represents a Sorted String Table. Entries are sorted by key.
 type SSTable[K cmp.Ordered, V any] struct {
 	Entries []*SSTableEntry[K, V]
+	Size    int64  // size of file in bytes
+	Name    string // full filename
 }
 
-// WriteSSTable writes the contents of a memtable to an SSTable file.
-func WriteSSTable[K cmp.Ordered, V any](tree MemTable[K, V], filename string) error {
+// writeSSTable writes the contents of a memtable to an SSTable file.
+func writeSSTable[K cmp.Ordered, V any](tree MemTable[K, V], filename string) error {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -35,11 +37,12 @@ func WriteSSTable[K cmp.Ordered, V any](tree MemTable[K, V], filename string) er
 			return err
 		}
 	}
+	file.Sync()
 	return nil
 }
 
-// ReadSSTable reads an SSTable file and returns its contents as an SSTable.
-func ReadSSTable[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) {
+// readSSTable reads an SSTable file and returns its contents as an SSTable.
+func readSSTable[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -55,7 +58,8 @@ func ReadSSTable[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) 
 		}
 		entries = append(entries, &entry)
 	}
-	return &SSTable[K, V]{Entries: entries}, nil
+	fd, err := file.Stat()
+	return &SSTable[K, V]{Entries: entries, Size: fd.Size(), Name: filename}, err
 }
 
 // Search searches for a key in the SSTable.

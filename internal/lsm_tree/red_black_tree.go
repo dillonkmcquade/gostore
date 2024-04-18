@@ -1,4 +1,4 @@
-package store
+package lsm_tree
 
 import (
 	"cmp"
@@ -63,8 +63,8 @@ func (rbt *RedBlackTree[K, V]) Iterator() Iterator[K, V] {
 	return newRBTIterator(rbt.root, rbt.Size())
 }
 
-func NewRedBlackTree() MemTable[int, any] {
-	return &RedBlackTree[int, any]{}
+func newRedBlackTree[K cmp.Ordered, V any]() MemTable[K, V] {
+	return &RedBlackTree[K, V]{}
 }
 
 func (rbt *RedBlackTree[K, V]) Size() uint {

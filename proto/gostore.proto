@@ -4,17 +4,14 @@ option go_package = "github.com/dillonkmcquade/gostore/internal/pb";
 
 service GoStore {
   rpc Write(WriteRequest) returns (WriteReply) {};
-  rpc Read(ReadRequest) returns (Record) {};
+  rpc Read(ReadRequest) returns (ReadReply) {};
   rpc Update(WriteRequest) returns (WriteReply) {};
   rpc Delete(ReadRequest) returns (WriteReply) {};
 }
 
 message WriteRequest {
-  string key = 1;
+  int64 key = 1;
   bytes payload = 2;
-  string type = 3;
-  // time in seconds until record expires
-  int32 expiration = 4;
 }
 
 message WriteReply {
@@ -22,17 +19,10 @@ message WriteReply {
   string message = 2;
 }
 
-message ReadRequest { string key = 1; }
-
-message Record {
-  bytes payload = 1;
-  // A string representation of the type, will map to enum Type
-  string type = 2;
+message ReadReply {
+  int64 status = 1;
+  string message = 2;
+  bytes data = 3;
 }
 
-enum Type {
-  STRING = 0;
-  INTEGER = 1;
-  BYTES = 2;
-  BOOL = 3;
-}
+message ReadRequest { int64 key = 1; }

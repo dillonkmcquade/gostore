@@ -1,4 +1,4 @@
-package store
+package lsm_tree
 
 import (
 	"testing"

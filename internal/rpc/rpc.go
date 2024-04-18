@@ -1,8 +1,9 @@
-package store
+package rpc
 
 import (
 	"context"
 
+	lsm "github.com/dillonkmcquade/gostore/internal/lsm_tree"
 	"github.com/dillonkmcquade/gostore/internal/pb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -10,21 +11,20 @@ import (
 
 type GoStoreRPC struct {
 	pb.UnimplementedGoStoreServer
-	DB *DataStore
+	tree        lsm.LSMTree[int64, any]
+	cancelChans map[string]chan bool
 }
 
 func New() *GoStoreRPC {
-	return &GoStoreRPC{DB: &DataStore{data: make(map[string]RawRecord), cancelChans: make(map[string]chan bool)}}
+	return &GoStoreRPC{tree: lsm.New[int64, any](), cancelChans: make(map[string]chan bool)}
 }
 
-// TODO handle ctx
 func (self *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
-	if self.DB.hasKey(in.Key) {
-		return nil, status.Error(codes.AlreadyExists, "Existing key found")
-	}
-
 	done := make(chan error, 1)
-	go self.DB.write(in, done)
+	err := self.tree.Write(in.Key, in.Payload)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Error writing to database: %v", err)
+	}
 
 	select {
 	case err := <-done:
@@ -43,12 +43,9 @@ func (self *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.Wri
 	return nil, nil
 }
 
-func (self *GoStoreRPC) Read(ctx context.Context, in *pb.ReadRequest) (*pb.Record, error) {
-	if !self.DB.hasKey(in.Key) {
-		return nil, status.Error(codes.NotFound, "Key not found")
-	}
+func (self *GoStoreRPC) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadReply, error) {
 	done := make(chan any, 1)
-	go self.DB.read(in.Key, done)
+	val, err := self.tree.Read(in.Key)
 	select {
 	case result := <-done:
 		switch r := result.(type) {

@@ -30,12 +30,20 @@ func TestLSMRead(t *testing.T) {
 	}
 }
 
-func TestLSMWriteWAL(t *testing.T) {
+func TestLSMReplay(t *testing.T) {
 	tree := New[int64, any](100)
 	defer tree.Clean()
 	for i := 0; i < 10; i++ {
 		err := tree.Write(int64(i), fmt.Sprintf("%vtest", i))
 		if err != nil {
+			t.Error(err)
+		}
+	}
+	tree2 := New[int64, any](100)
+	for i := 0; i < 10; i++ {
+		expected := fmt.Sprintf("%vtest", i)
+		val, err := tree2.Read(int64(i))
+		if err != nil || val != expected {
 			t.Error(err)
 		}
 	}

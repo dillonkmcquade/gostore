@@ -63,7 +63,7 @@ func New[K cmp.Ordered, V any]() LSMTree[K, V] {
 	var bloom *BloomFilter[K]
 	bloom, err = loadBloomFromFile[K](filepath.Join(gostorePath, "bloomfilter.dat"))
 	if err != nil {
-		bloom = newBloomFilter[K](200000, 2)
+		bloom = NewBloomFilter[K](200000, 2)
 	}
 
 	return &GoStore[K, V]{memTable: tree, wal: wal, bloom: bloom}

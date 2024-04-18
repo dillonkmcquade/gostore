@@ -6,37 +6,41 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
+	"io"
 	"os"
 )
 
 type BloomFilter[K cmp.Ordered] struct {
-	bitset    []bool
-	hashFuncs []hash.Hash64
+	Bitset    []bool
+	HashFuncs []hash.Hash64
 }
 
-// newBloomFilter creates a new Bloom filter with the specified size and number of hash functions.
-func newBloomFilter[K cmp.Ordered](size int, numHashFuncs int) *BloomFilter[K] {
+// NewBloomFilter creates a new Bloom filter with the specified size and number of hash functions.
+func NewBloomFilter[K cmp.Ordered](size int, numHashFuncs int) *BloomFilter[K] {
+	gob.Register(fnv.New64a())
 	return &BloomFilter[K]{
-		bitset:    make([]bool, size),
-		hashFuncs: createHashFuncs(numHashFuncs),
+		Bitset:    make([]bool, size),
+		HashFuncs: createHashFuncs(numHashFuncs),
 	}
 }
 
 // Add adds a key to the Bloom filter.
-func (bf *BloomFilter[K]) Add(element K) {
-	for _, hf := range bf.hashFuncs {
-		hf.Write([]byte(fmt.Sprintf("%v", element)))
-		index := hf.Sum64() % uint64(len(bf.bitset))
-		bf.bitset[index] = true
+func (bf *BloomFilter[K]) Add(key K) {
+	for _, hf := range bf.HashFuncs {
+		hf.Reset()
+		hf.Write([]byte(fmt.Sprintf("%v", key)))
+		index := hf.Sum64() % uint64(len(bf.Bitset))
+		bf.Bitset[index] = true
 	}
 }
 
-// Test tests whether a key is in the Bloom filter.
-func (bf *BloomFilter[K]) Test(element K) bool {
-	for _, hf := range bf.hashFuncs {
-		hf.Write([]byte(fmt.Sprintf("%v", element)))
-		index := hf.Sum64() % uint64(len(bf.bitset))
-		if !bf.bitset[index] {
+// Has tests whether a key is in the Bloom filter.
+func (bf *BloomFilter[K]) Has(key K) bool {
+	for _, hf := range bf.HashFuncs {
+		hf.Reset()
+		hf.Write([]byte(fmt.Sprintf("%v", key)))
+		index := hf.Sum64() % uint64(len(bf.Bitset))
+		if !bf.Bitset[index] {
 			return false
 		}
 	}
@@ -52,8 +56,8 @@ func createHashFuncs(numHashFuncs int) []hash.Hash64 {
 	return hashFuncs
 }
 
-// Write saves the Bloom filter to a file.
-func (bf *BloomFilter[K]) Write(filename string) error {
+// Save saves the Bloom filter to a file.
+func (bf *BloomFilter[K]) Save(filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -64,7 +68,8 @@ func (bf *BloomFilter[K]) Write(filename string) error {
 	if err := encoder.Encode(bf); err != nil {
 		return err
 	}
-	return nil
+	err = file.Sync()
+	return err
 }
 
 // loadBloomFromFile loads the Bloom filter from a file.
@@ -75,10 +80,12 @@ func loadBloomFromFile[K cmp.Ordered](filename string) (*BloomFilter[K], error) 
 	}
 	defer file.Close()
 
-	bf := &BloomFilter[K]{}
+	var bf BloomFilter[K]
 	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(bf); err != nil {
-		return nil, err
+	if err := decoder.Decode(&bf); err != nil {
+		if err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
 	}
-	return bf, nil
+	return &bf, nil
 }

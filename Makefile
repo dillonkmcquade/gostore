@@ -17,7 +17,10 @@ clean:
 	rm gostore
 
 test: 
-	go test -v ./... -count=1
+	go test -v ./internal/... -count=1
+
+integration-test:
+	go test -v ./tests/... -count=1
 
 
-.PHONY: run build clean test proto-compile
+.PHONY: run build clean test integration-test proto-compile

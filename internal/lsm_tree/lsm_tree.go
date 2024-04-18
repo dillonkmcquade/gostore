@@ -11,6 +11,19 @@ import (
 	"time"
 )
 
+const (
+	BLOOM_SIZE     = 200 // Size of Bloom filter bitset
+	NUM_HASH_FUNCS = 2   // Number of Hash Functions
+)
+
+var (
+	userHome    = os.Getenv("HOME")
+	gostorePath = filepath.Join(userHome, ".gostore")           // Base data directory
+	segmentDir  = filepath.Join(gostorePath, "segments")        // Contains all active SSTables
+	walPath     = filepath.Join(gostorePath, "wal.dat")         // Path to WAL
+	bloomPath   = filepath.Join(gostorePath, "bloomfilter.dat") // Path to saved bloom filter
+)
+
 type GoStore[K cmp.Ordered, V any] struct {
 	// The current memtable
 	memTable MemTable[K, V]
@@ -33,18 +46,23 @@ type GoStore[K cmp.Ordered, V any] struct {
 }
 
 // Creates a new LSMTree. Creates a cache directory under the
-// users XDG_CACHE_DIR to store data if it does not exist
-func New[K cmp.Ordered, V any]() LSMTree[K, V] {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		panic("XDG_CACHE_DIR does not exist") // Directory must exist
+// users XDG_CACHE_DIR to store data if it does not exist.
+//
+// ***Will panic if error is returned during any of the initialization steps.
+func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
+	// Create ~/.gostore
+	_, err := os.Stat(gostorePath)
+	if os.IsNotExist(err) {
+		err = os.Mkdir(gostorePath, 0777)
+		if err != nil {
+			panic(err) // Directory must exist in order to store data files
+		}
 	}
 
-	gostorePath := filepath.Join(cacheDir, "gostore")
-
-	_, err = os.Stat(gostorePath)
+	// Create ~/.gostore/segments/
+	_, err = os.Stat(segmentDir)
 	if os.IsNotExist(err) {
-		err = os.Mkdir(gostorePath, 0644)
+		err = os.Mkdir(segmentDir, 0777)
 		if err != nil {
 			panic(err) // Directory must exist in order to store data files
 		}
@@ -54,19 +72,27 @@ func New[K cmp.Ordered, V any]() LSMTree[K, V] {
 	tree := newRedBlackTree[K, V]()
 
 	// WAL
-	wal, err := newWal[K, V](filepath.Join(gostorePath, "wal.db"))
+	wal, err := newWal[K, V](walPath)
 	if err != nil {
+		if pathError, ok := err.(*os.PathError); ok {
+			fmt.Printf("Path error: %v", pathError.Error())
+			os.Exit(1)
+		}
 		panic(err)
 	}
 
 	// BLOOMFILTER
 	var bloom *BloomFilter[K]
-	bloom, err = loadBloomFromFile[K](filepath.Join(gostorePath, "bloomfilter.dat"))
+	bloom, err = loadBloomFromFile[K](bloomPath)
 	if err != nil {
-		bloom = NewBloomFilter[K](200000, 2)
+		if _, ok := err.(*os.PathError); ok {
+			bloom = NewBloomFilter[K](BLOOM_SIZE, NUM_HASH_FUNCS)
+		} else {
+			panic(err)
+		}
 	}
 
-	return &GoStore[K, V]{memTable: tree, wal: wal, bloom: bloom}
+	return &GoStore[K, V]{memTable: tree, wal: wal, bloom: bloom, max_size: maxSize}
 }
 
 // Iterate over segments from newest to oldest
@@ -96,9 +122,8 @@ func newSSTableIterator(segments *[]string) *SSTableIterator {
 // Write memTable to disk as SSTable
 func (self *GoStore[K, V]) flush() {
 	// Persist in-memory data
-	cacheDir, err := os.UserCacheDir()
-	table := filepath.Join(cacheDir, "gostore", fmt.Sprintf("%v.segment", time.Now().Unix()))
-	err = writeSSTable(self.memTable, table)
+	table := filepath.Join(segmentDir, fmt.Sprintf("%v.segment", time.Now().Unix()))
+	err := writeSSTable(self.memTable, table)
 	if err != nil {
 		log.Fatalf("Unable to build SSTable : %v", err)
 	}
@@ -183,8 +208,11 @@ func (self *GoStore[K, V]) Replay(filename string) error {
 	return nil
 }
 
+func (self *GoStore[K, V]) Clean() error {
+	return os.Remove(walPath)
+}
+
 // Close closes all associated resources
 func (self *GoStore[K, V]) Close() error {
-	self.wal.Close()
-	return nil
+	return self.wal.Close()
 }

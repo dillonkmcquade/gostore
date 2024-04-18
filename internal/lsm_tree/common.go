@@ -32,4 +32,8 @@ type LSMTree[K cmp.Ordered, V any] interface {
 	Read(K) (V, error)
 	// Delete the key from the DB
 	Delete(K) error
+	// Release associated resources
+	Close() error
+	// For debugging: Remove created files
+	Clean() error
 }

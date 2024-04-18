@@ -38,7 +38,7 @@ type WAL[K cmp.Ordered, V any] struct {
 
 // Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
 func newWal[K cmp.Ordered, V any](filename string) (*WAL[K, V], error) {
-	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
+	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0777)
 	return &WAL[K, V]{file: file, encoder: gob.NewEncoder(file)}, err
 }
 

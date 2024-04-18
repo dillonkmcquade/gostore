@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -82,27 +83,27 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 		}
 	}
 
+	// Create new WAL
 	db := &GoStore[K, V]{memTable: tree, bloom: bloom, max_size: maxSize}
 	db.wal, err = newWal[K, V](walPath)
 	if err != nil {
-		log.Fatalf("Failed to create new WAL: %s", err)
+		log.Fatalf("Error opening/creating WAL: %s", err)
 	}
 
-	// Recreate previous state if a wal.dat exists
+	// Recreate previous state if wal.dat is not empty
 	err = db.Replay(walPath)
-	if err != nil && err != io.EOF {
+	if err != nil {
 		switch e := err.(type) {
 		case *LogApplyErr[K, V]:
 			fmt.Println("ERROR WHILE RECREATING DATABASE STATE FROM WRITE AHEAD LOG.")
 			fmt.Printf("POSSIBLE DATA LOSS HAS OCCURRED: %v\n", e.Error())
 		case *os.PathError:
-			goto end
+			// Error opening file. Should have log.Fatal'd on WAL creation if file could not be created
+			break
 		default:
 			log.Fatalf("Error on WAL replay: %v", err)
 		}
 	}
-	// Create new WAL
-end:
 	return db
 }
 
@@ -214,12 +215,11 @@ func (self *GoStore[K, V]) Replay(filename string) error {
 	dec := gob.NewDecoder(file)
 	for {
 		entry := &LogEntry[K, V]{}
-		if err = dec.Decode(entry); err != nil {
-			if err == io.EOF {
-				break
+		if decodeErr := dec.Decode(entry); decodeErr != nil {
+			if decodeErr == io.EOF {
+				break // End of log file
 			}
-			log.Println(err)
-			break // End of log file
+			return &LogApplyErr[K, V]{Entry: entry, Cause: decodeErr}
 		}
 
 		// Apply the entry to the database
@@ -230,13 +230,27 @@ func (self *GoStore[K, V]) Replay(filename string) error {
 			panic("Unimplemented")
 		}
 	}
-	return err
+	return nil
 }
 
 func (self *GoStore[K, V]) Clean() error {
 	err := self.Close()
 	if err != nil {
 		return nil
+	}
+
+	segments, err := os.ReadDir(segmentDir)
+	if err != nil {
+		return err
+	}
+
+	for _, segment := range segments {
+		if strings.HasSuffix(segment.Name(), ".segment") {
+			err = os.Remove(filepath.Join(segmentDir, segment.Name()))
+			if err != nil {
+				return err
+			}
+		}
 	}
 	return os.Remove(walPath)
 }

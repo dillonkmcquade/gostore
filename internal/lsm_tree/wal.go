@@ -21,20 +21,6 @@ type LogEntry[K cmp.Ordered, V any] struct {
 	Value     V
 }
 
-func (self *LogEntry[K, V]) Apply(lsm LSMTree[K, V]) error {
-	var err error
-	switch self.Operation {
-	case INSERT:
-		err = lsm.Write(self.Key, self.Value)
-	case DELETE:
-		err = lsm.Delete(self.Key)
-	}
-	if err != nil {
-		return &LogApplyErr[K, V]{Entry: self, Cause: err}
-	}
-	return nil
-}
-
 type WAL[K cmp.Ordered, V any] struct {
 	file    *os.File
 	encoder *gob.Encoder

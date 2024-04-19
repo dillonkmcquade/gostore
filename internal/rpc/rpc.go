@@ -18,6 +18,10 @@ func New() *GoStoreRPC {
 	return &GoStoreRPC{tree: lsm.New[int64, []byte](20)}
 }
 
+func (self *GoStoreRPC) Close() {
+	self.tree.Close()
+}
+
 func (self *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	done := make(chan error, 1)
 
@@ -40,26 +44,25 @@ func (self *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.Wri
 	return nil, nil
 }
 
+type ReadResult struct {
+	Err error
+	Val []byte
+}
+
 func (self *GoStoreRPC) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadReply, error) {
-	done := make(chan any, 1)
+	done := make(chan *ReadResult, 1)
 
 	go func() {
 		val, err := self.tree.Read(in.Key)
-		if err != nil {
-			done <- err
-			return
-		}
-		done <- val
+		done <- &ReadResult{Err: err, Val: val}
 	}()
 
 	select {
 	case result := <-done:
-		switch r := result.(type) {
-		case error:
-			return nil, status.Errorf(codes.Internal, "Error reading from database: %v", r.Error())
-		case []byte:
-			return &pb.ReadReply{Status: int32(codes.OK), Message: "", Data: r}, nil
+		if result.Err != nil {
+			return nil, status.Errorf(codes.NotFound, "Not found: %v", result.Err)
 		}
+		return &pb.ReadReply{Status: int32(codes.OK), Message: "", Data: result.Val}, nil
 	case <-ctx.Done():
 		switch ctx.Err() {
 		case context.DeadlineExceeded:

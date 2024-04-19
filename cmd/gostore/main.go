@@ -64,7 +64,9 @@ func main() {
 	s := grpc.NewServer(grpc.ChainUnaryInterceptor(interceptors.Logger))
 	defer s.Stop()
 
-	pb.RegisterGoStoreServer(s, &rpc.GoStoreRPC{})
+	srv := rpc.New()
+	defer srv.Close()
+	pb.RegisterGoStoreServer(s, srv)
 
 	if err = s.Serve(listener); err != nil {
 		log.Fatalf("Failed to serve %v", err)

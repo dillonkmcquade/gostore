@@ -28,7 +28,7 @@ type MemTable[K cmp.Ordered, V any] interface {
 type LSMTree[K cmp.Ordered, V any] interface {
 	// Write the Key-Value pair to the memtable
 	Write(K, V) error
-	// Read the value from the given key
+	// Read the value from the given key. Will return error if value is not found.
 	Read(K) (V, error)
 	// Delete the key from the DB
 	Delete(K) error

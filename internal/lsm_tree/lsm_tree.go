@@ -3,6 +3,7 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -176,11 +177,13 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 
 func (self *GoStore[K, V]) Read(key K) (V, error) {
 	self.mut.RLock()
+	defer self.mut.RUnlock()
 	// Read from memory
 	if val, ok := self.memTable.Get(key); ok {
 		return val, nil
-	} else {
-		// Read from disk
+	}
+	// Read from disk
+	if len(self.segments) > 0 {
 		iter := newSSTableIterator(&self.segments)
 		for iter.HasNext() {
 			filename := iter.Next()
@@ -196,8 +199,7 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 
 		}
 	}
-	self.mut.RUnlock()
-	return Node[K, V]{}.Value, nil
+	return Node[K, V]{}.Value, errors.New("Not found")
 }
 
 func (self *GoStore[K, V]) Delete(key K) error {

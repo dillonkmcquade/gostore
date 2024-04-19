@@ -10,7 +10,7 @@ import (
 
 	"github.com/dillonkmcquade/gostore/internal/interceptors"
 	"github.com/dillonkmcquade/gostore/internal/pb"
-	"github.com/dillonkmcquade/gostore/internal/store"
+	"github.com/dillonkmcquade/gostore/internal/rpc"
 	"google.golang.org/grpc"
 )
 
@@ -64,7 +64,7 @@ func main() {
 	s := grpc.NewServer(grpc.ChainUnaryInterceptor(interceptors.Logger))
 	defer s.Stop()
 
-	pb.RegisterGoStoreServer(s, store.New())
+	pb.RegisterGoStoreServer(s, &rpc.GoStoreRPC{})
 
 	if err = s.Serve(listener); err != nil {
 		log.Fatalf("Failed to serve %v", err)

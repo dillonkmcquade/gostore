@@ -15,12 +15,12 @@ message WriteRequest {
 }
 
 message WriteReply {
-  bool status = 1;
+  int32 status = 1;
   string message = 2;
 }
 
 message ReadReply {
-  int64 status = 1;
+  int32 status = 1;
   string message = 2;
   bytes data = 3;
 }

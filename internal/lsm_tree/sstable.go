@@ -1,6 +1,7 @@
 package lsm_tree
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/gob"
 	"os"
@@ -28,7 +29,9 @@ func writeSSTable[K cmp.Ordered, V any](tree MemTable[K, V], filename string) er
 	}
 	defer file.Close()
 
-	encoder := gob.NewEncoder(file)
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
 	iter := tree.Iterator()
 	for iter.HasNext() {
 		node := iter.Next()
@@ -37,8 +40,8 @@ func writeSSTable[K cmp.Ordered, V any](tree MemTable[K, V], filename string) er
 			return err
 		}
 	}
-	file.Sync()
-	return nil
+	_, err = buf.WriteTo(file)
+	return err
 }
 
 // readSSTable reads an SSTable file and returns its contents as an SSTable.

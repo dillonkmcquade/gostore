@@ -52,21 +52,16 @@ type GoStore[K cmp.Ordered, V any] struct {
 //
 // ***Will exit with non-zero status if error is returned during any of the initialization steps.
 func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
-	// Create ~/.gostore
-	_, err := os.Stat(gostorePath)
-	if os.IsNotExist(err) {
-		err = os.Mkdir(gostorePath, 0777)
-		if err != nil {
-			log.Fatal(err) // Directory must exist in order to store data files
-		}
+	// Create application directories
+	dirs := []string{
+		gostorePath,
+		segmentDir,
 	}
 
-	// Create ~/.gostore/segments/
-	_, err = os.Stat(segmentDir)
-	if os.IsNotExist(err) {
-		err = os.Mkdir(segmentDir, 0777)
+	for _, dir := range dirs {
+		err := mkDir(dir)
 		if err != nil {
-			log.Fatal(err) // Directory must exist in order to store data files
+			log.Fatalf("Error while creating directory %v: %v", dir, err)
 		}
 	}
 
@@ -75,7 +70,7 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 
 	// BLOOMFILTER
 	var bloom *BloomFilter[K]
-	bloom, err = loadBloomFromFile[K](bloomPath)
+	bloom, err := loadBloomFromFile[K](bloomPath)
 	if err != nil {
 		if _, ok := err.(*os.PathError); ok {
 			bloom = NewBloomFilter[K](BLOOM_SIZE, NUM_HASH_FUNCS)
@@ -140,7 +135,6 @@ func (self *GoStore[K, V]) flush() {
 	if err != nil {
 		log.Fatalf("Unable to build SSTable : %v", err)
 	}
-	self.mut.Unlock()
 
 	// Save filename for reads
 	self.segments = append(self.segments, table)
@@ -150,13 +144,15 @@ func (self *GoStore[K, V]) flush() {
 
 	// Discard write-ahead log
 	self.wal.Discard()
+
+	self.mut.Unlock()
 }
 
 func (self *GoStore[L, V]) exceeds_size() bool {
 	return self.memTable.Size() > self.max_size
 }
 
-// Insert to memtable
+// Write the Key-Value pair to the memtable
 func (self *GoStore[K, V]) Write(key K, val V) error {
 	self.mut.Lock()
 
@@ -175,6 +171,7 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 	return nil
 }
 
+// Read the value from the given key. Will return error if value is not found.
 func (self *GoStore[K, V]) Read(key K) (V, error) {
 	self.mut.RLock()
 	defer self.mut.RUnlock()
@@ -202,6 +199,7 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 	return Node[K, V]{}.Value, errors.New("Not found")
 }
 
+// Delete a key from the DB
 func (self *GoStore[K, V]) Delete(key K) error {
 	panic("Unimplemented")
 }
@@ -225,16 +223,12 @@ func (self *GoStore[K, V]) Replay(filename string) error {
 		}
 
 		// Apply the entry to the database
-		switch entry.Operation {
-		case INSERT:
-			self.memTable.Put(entry.Key, entry.Value)
-		case DELETE:
-			panic("Unimplemented")
-		}
+		entry.Apply(self)
 	}
 	return nil
 }
 
+// For debugging/tests: Use instead of Close to remove created files and release resources
 func (self *GoStore[K, V]) Clean() error {
 	err := self.Close()
 	if err != nil {

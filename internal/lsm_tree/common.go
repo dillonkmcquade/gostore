@@ -1,6 +1,9 @@
 package lsm_tree
 
-import "cmp"
+import (
+	"cmp"
+	"os"
+)
 
 // A smallest-to-largest Node iterator
 type Iterator[K cmp.Ordered, V any] interface {
@@ -38,4 +41,13 @@ type LSMTree[K cmp.Ordered, V any] interface {
 	Clean() error
 	// Recreate the memtable from WAL
 	Replay(string) error
+}
+
+// Creates directory if it does not exist.
+func mkDir(filename string) error {
+	_, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return os.Mkdir(filename, 0777)
+	}
+	return err
 }

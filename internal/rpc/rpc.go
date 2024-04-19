@@ -11,11 +11,11 @@ import (
 
 type GoStoreRPC struct {
 	pb.UnimplementedGoStoreServer
-	tree lsm.LSMTree[int64, []byte]
+	tree lsm.LSMTree[uint64, []byte]
 }
 
 func New() *GoStoreRPC {
-	return &GoStoreRPC{tree: lsm.New[int64, []byte](20)}
+	return &GoStoreRPC{tree: lsm.New[uint64, []byte](20)}
 }
 
 func (self *GoStoreRPC) Close() {

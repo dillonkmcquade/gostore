@@ -8,18 +8,12 @@ import (
 	"sync"
 )
 
-type Operation int
+type Operation byte
 
 const (
-	INSERT Operation = iota
-	DELETE
+	INSERT Operation = 0x49 // I
+	DELETE Operation = 0x44 // D
 )
-
-type LogEntry[K cmp.Ordered, V any] struct {
-	Operation Operation
-	Key       K
-	Value     V
-}
 
 type WAL[K cmp.Ordered, V any] struct {
 	file    *os.File
@@ -48,12 +42,12 @@ func (self *WAL[K, V]) Discard() error {
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
 	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}
+	self.mut.Lock()
 	err := self.encoder.Encode(entry)
 	if err != nil {
 		return err
 	}
 	// Ensure the entry is flushed to disk immediately.
-	self.mut.Lock()
 	err = self.file.Sync()
 	self.mut.Unlock()
 	return err
@@ -62,6 +56,21 @@ func (self *WAL[K, V]) Write(key K, val V) error {
 // Close closes the Write-Ahead Log file.
 func (self *WAL[K, V]) Close() error {
 	return self.file.Close()
+}
+
+type LogEntry[K cmp.Ordered, V any] struct {
+	Operation Operation
+	Key       K
+	Value     V
+}
+
+func (self *LogEntry[K, V]) Apply(lsm *GoStore[K, V]) {
+	switch self.Operation {
+	case INSERT:
+		lsm.memTable.Put(self.Key, self.Value)
+	case DELETE:
+		panic("Unimplemented")
+	}
 }
 
 // LogApplyErr is returned when a log entry failed to be applied to be applied.

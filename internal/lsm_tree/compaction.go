@@ -53,9 +53,9 @@ func (c *CompactionImpl[K, V]) Compact(task *CompactionTask[K, V], manifest *Man
 		lowerLevelTable := task.lowerLevelIDs[i]
 
 		// Load the two tables into memory
-		upperLevelTable.Load()
+		_ = upperLevelTable.Load()
 		defer upperLevelTable.Clear()
-		lowerLevelTable.Load()
+		_ = lowerLevelTable.Load()
 		defer lowerLevelTable.Clear()
 
 		// Merge upper table into lower table
@@ -71,8 +71,18 @@ func (c *CompactionImpl[K, V]) Compact(task *CompactionTask[K, V], manifest *Man
 		}
 		// update manifest as we go
 		manifest[task.lowerLevel].Add(output, size)
-		manifest[task.lowerLevel].Remove(lowerLevelTable)
-		manifest[*task.upperLevel].Remove(upperLevelTable)
+
+		lowerTableSize, err := lowerLevelTable.Size()
+		if err != nil {
+			return err
+		}
+		manifest[task.lowerLevel].Remove(lowerLevelTable, lowerTableSize)
+
+		upperTableSize, err := upperLevelTable.Size()
+		if err != nil {
+			return err
+		}
+		manifest[*task.upperLevel].Remove(upperLevelTable, upperTableSize)
 
 	}
 	return nil

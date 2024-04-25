@@ -29,7 +29,8 @@ type SSTable[K cmp.Ordered, V any] struct {
 }
 
 func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
-	return table.First >= anotherTable.First || table.Last <= anotherTable.Last
+	return (table.First >= anotherTable.First && table.First <= anotherTable.Last) ||
+		(table.Last >= anotherTable.First && table.Last <= anotherTable.Last)
 }
 
 // Sync flushes all in-memory entries to stable storage

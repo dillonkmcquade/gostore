@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestNew(t *testing.T) {
+func TestLSMNew(t *testing.T) {
 	tree := New[int64, any](100)
 	defer tree.Clean()
 }

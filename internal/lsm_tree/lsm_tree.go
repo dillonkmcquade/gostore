@@ -41,7 +41,7 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 	}
 
 	// DATA LAYOUT
-	manifest, err := NewManifest[K, V]()
+	manifest, err := NewManifest[K, V](nil)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		log.Fatalf("Error loading or creating manifest: %v", err)
 	}
@@ -93,7 +93,7 @@ func (self *GoStore[K, V]) flush() {
 
 	// Update manifest
 	self.manifest[0].Add(snapshot, size)
-	err = self.manifest.Persist()
+	err = self.manifest.Persist(nil)
 	if err != nil {
 		panic(err)
 	}

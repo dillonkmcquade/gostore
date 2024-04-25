@@ -15,14 +15,14 @@ type Level[K cmp.Ordered, V any] struct {
 	MaxSize int64
 }
 
-// Binary search the current level for the key, returns false value if not found
-func (l *Level[K, V]) BinarySearch(key K) (V, bool) {
+// Binary search the current level for table that has range overlapping key
+func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
 	// find index of table that COULD contain key
 	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= key && l.Tables[i].Last >= key })
-	if index < len(l.Tables) {
-		return l.Tables[index].Search(key)
+	if index >= 0 && index < len(l.Tables) {
+		return index, true
 	}
-	return SSTableEntry[K, V]{}.Value, false
+	return -1, false
 }
 
 func (l *Level[K, V]) Add(table *SSTable[K, V], size int64) {
@@ -31,7 +31,7 @@ func (l *Level[K, V]) Add(table *SSTable[K, V], size int64) {
 		l.Size += size
 		return
 	}
-	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].Last <= table.First })
+	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= table.First && l.Tables[i].Last <= table.Last })
 	l.Tables = insertAt(l.Tables, index, table)
 	l.Size += size
 }
@@ -90,6 +90,7 @@ func (man *Manifest[K, V]) Persist(p *string) error {
 	return encoder.Encode(man)
 }
 
+// Create new manifest
 func NewManifest[K cmp.Ordered, V any](filename *string) (*Manifest[K, V], error) {
 	var path string
 	if filename == nil {

@@ -33,6 +33,51 @@ func TestManifestPersist(t *testing.T) {
 	}
 }
 
+func TestLevelBinarySearch(t *testing.T) {
+	path := "../../data/sortedManifest.json"
+	man, err := NewManifest[int64, string](&path)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if i, found := man[0].BinarySearch(0); found {
+		err = man[0].Tables[i].Open()
+		if err != nil {
+			t.Error(err)
+		}
+		if _, found := man[0].Tables[i].Search(0); !found {
+			t.Error("Should contain 0")
+		}
+		man[0].Tables[i].Close()
+	}
+	if i, found := man[0].BinarySearch(400); found {
+		err = man[0].Tables[i].Open()
+		if err != nil {
+			t.Error(err)
+		}
+		if _, found := man[0].Tables[i].Search(400); !found {
+			t.Error("Should contain 400")
+		}
+		man[0].Tables[i].Close()
+	}
+
+	// if i, found := man[0].BinarySearch(209); !found {
+	// 	man[0].Tables[i].Open()
+	// 	man[0].Tables[i].Search(400)
+	// 	man[0].Tables[i].Close()
+	// }
+	// if i, found := man[0].BinarySearch(350); !found {
+	// 	man[0].Tables[i].Open()
+	// 	man[0].Tables[i].Search(400)
+	// 	man[0].Tables[i].Close()
+	// }
+	// if i, found := man[0].BinarySearch(1000); found {
+	// 	man[0].Tables[i].Open()
+	// 	man[0].Tables[i].Search(400)
+	// 	man[0].Tables[i].Close()
+	// }
+}
+
 func TestLevelAdd(t *testing.T) {
 	level := &Level[int64, string]{
 		Number:  0,
@@ -110,6 +155,5 @@ func TestLevelRemove(t *testing.T) {
 	}
 }
 
-// func TestManifestAdd(t *testing.T) {}
 // func TestManifestAdd(t *testing.T) {}
 // func TestManifestAdd(t *testing.T) {}

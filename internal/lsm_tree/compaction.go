@@ -53,10 +53,10 @@ func (c *CompactionImpl[K, V]) Compact(task *CompactionTask[K, V], manifest *Man
 		lowerLevelTable := task.lowerLevelIDs[i]
 
 		// Load the two tables into memory
-		_ = upperLevelTable.Load()
-		defer upperLevelTable.Clear()
-		_ = lowerLevelTable.Load()
-		defer lowerLevelTable.Clear()
+		_ = upperLevelTable.Open()
+		defer upperLevelTable.Close()
+		_ = lowerLevelTable.Open()
+		defer lowerLevelTable.Close()
 
 		// Merge upper table into lower table
 		output := merge(upperLevelTable, lowerLevelTable)

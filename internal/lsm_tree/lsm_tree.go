@@ -142,12 +142,12 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 
 		// Check unsorted level 0
 		for _, tbl := range level0_tbl.Tables {
-			err := tbl.Load()
+			err := tbl.Open()
 			if err != nil {
 				return Node[K, V]{}.Value, errors.New("Not found")
 			}
 
-			defer tbl.Clear()
+			defer tbl.Close()
 
 			if val, found := tbl.Search(key); found {
 				return val, nil
@@ -156,8 +156,11 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 
 		// binary search sorted levels 1:3
 		for _, level := range self.manifest[1:] {
-			if val, found := level.BinarySearch(key); found {
-				return val, nil
+			if i, found := level.BinarySearch(key); found {
+				val, found := level.Tables[i].Search(key)
+				if found {
+					return val, nil
+				}
 			}
 		}
 	}

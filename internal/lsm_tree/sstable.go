@@ -35,34 +35,23 @@ func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
 
 // Sync flushes all in-memory entries to stable storage
 func (table *SSTable[K, V]) Sync() (int64, error) {
-	_, err := table.Open()
+	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0777)
 	if err != nil {
 		return 0, err
 	}
-	defer table.Close()
-	encoder := gob.NewEncoder(table.file)
+	defer file.Close()
+	encoder := gob.NewEncoder(file)
 	err = encoder.Encode(table.Entries)
 	if err != nil {
 		return 0, err
 	}
-	table.file.Sync()
-	table.Entries = []*SSTableEntry[K, V]{}
-	return table.Size()
-}
-
-// Closes file
-func (table *SSTable[K, V]) Close() error {
-	return table.file.Close()
-}
-
-// Opens file
-func (table *SSTable[K, V]) Open() (*SSTable[K, V], error) {
-	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0777)
+	err = file.Sync()
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
+	table.Entries = []*SSTableEntry[K, V]{}
 	table.file = file
-	return table, nil
+	return table.Size()
 }
 
 // Returns the file size in bytes
@@ -74,43 +63,42 @@ func (table *SSTable[K, V]) Size() (int64, error) {
 		}
 		return fd.Size(), nil
 	}
-	_, err := table.Open()
-	defer table.Close()
-	fd, err := table.file.Stat()
+	fd, err := os.Stat(table.Name)
 	if err != nil {
 		return 0, err
 	}
 	return fd.Size(), nil
 }
 
-// Load entries into memory
-// ** Must call Clear() after using Load to clear entries and unlock access to the table
-func (table *SSTable[K, V]) Load() error {
+// Read entries into memory & locks table
+//
+// *** You must call Close() after opening table
+func (table *SSTable[K, V]) Open() error {
 	table.mut.Lock()
-	if len(table.Entries) != 0 {
-		return nil
-	}
-	_, err := table.Open()
+	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0777)
 	if err != nil {
 		return err
 	}
-	defer table.Close()
-	decoder := gob.NewDecoder(table.file)
+	table.file = file
+	decoder := gob.NewDecoder(file)
 	return decoder.Decode(&table.Entries)
 }
 
-// Clear table entries
-func (table *SSTable[K, V]) Clear() {
+// Clears entries, unlocks table, and closes file
+//
+// Should only be called after prior call to Open()
+func (table *SSTable[K, V]) Close() error {
 	table.Entries = []*SSTableEntry[K, V]{}
 	table.mut.Unlock()
+	return table.file.Close()
 }
 
 // Search searches for a key in the SSTable.
+//
 // Panics if attempt to search empty entries array
 func (table *SSTable[K, V]) Search(key K) (V, bool) {
-	if len(table.Entries) == 0 {
-		panic("Cannot search empty SSTable")
-	}
+	assert(len(table.Entries) > 0)
+
 	idx, found := sort.Find(len(table.Entries), func(i int) int { return cmp.Compare(key, table.Entries[i].Key) })
 	if found {
 		return table.Entries[idx].Value, true

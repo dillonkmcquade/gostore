@@ -1,0 +1,33 @@
+[
+  {
+    "Number": 0,
+    "Tables": [
+      {
+        "Entries": [],
+        "Name": "../../data/sstable1.segment",
+        "First": 0,
+        "Last": 100,
+        "CreatedOn": "2024-04-25T15:51:02.919974323-04:00"
+      },
+      {
+        "Entries": [],
+        "Name": "../../data/sstable2.segment",
+        "First": 105,
+        "Last": 199,
+        "CreatedOn": "2024-04-25T15:51:02.91997449-04:00"
+      },
+      {
+        "Entries": [],
+        "Name": "../../data/sstable3.segment",
+        "First": 200,
+        "Last": 400,
+        "CreatedOn": "2024-04-25T15:51:02.919974573-04:00"
+      }
+    ],
+    "Size": 468,
+    "MaxSize": 314572800
+  },
+  { "Number": 1, "Tables": null, "Size": 0, "MaxSize": 3145728000 },
+  { "Number": 2, "Tables": null, "Size": 0, "MaxSize": 31457280000 },
+  { "Number": 3, "Tables": null, "Size": 0, "MaxSize": 314572800000 }
+]

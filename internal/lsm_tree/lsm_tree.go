@@ -2,7 +2,6 @@ package lsm_tree
 
 import (
 	"cmp"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
@@ -11,20 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
-)
-
-const (
-	BLOOM_SIZE     = 200 // Size of Bloom filter bitset
-	NUM_HASH_FUNCS = 2   // Number of Hash Functions
-)
-
-var (
-	userHome    = os.Getenv("HOME")
-	gostorePath = filepath.Join(userHome, ".gostore")           // Base data directory
-	segmentDir  = filepath.Join(gostorePath, "segments")        // Contains all active SSTables
-	walPath     = filepath.Join(gostorePath, "wal.dat")         // Path to WAL
-	bloomPath   = filepath.Join(gostorePath, "bloomfilter.dat") // Path to saved bloom filter
 )
 
 type GoStore[K cmp.Ordered, V any] struct {
@@ -32,18 +17,13 @@ type GoStore[K cmp.Ordered, V any] struct {
 	memTable MemTable[K, V]
 
 	// Filenames of sstables ordered oldest to most recent
-	segments []string
+	manifest *Manifest[K, V]
+
+	// Configurable interface for compaction and compaction trigger
+	compaction CompactionController[K, V]
 
 	// Verify if the key exists in the DB quickly
 	bloom *BloomFilter[K]
-
-	// The max size before the memtable is flushed to disk
-	max_size uint
-
-	// The Write-Ahead-Log (wal) contains a log of all in-memory operations
-	// prior to flushing. If the database crashes with data in-memory that has not
-	// been written to disk, the current in-memory state may be recreated again after restart.
-	wal *WAL[K, V]
 
 	mut sync.RWMutex
 }
@@ -53,24 +33,25 @@ type GoStore[K cmp.Ordered, V any] struct {
 // ***Will exit with non-zero status if error is returned during any of the initialization steps.
 func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 	// Create application directories
-	dirs := []string{
-		gostorePath,
-		segmentDir,
-	}
-
-	for _, dir := range dirs {
+	for _, dir := range appDirs {
 		err := mkDir(dir)
 		if err != nil {
 			log.Fatalf("Error while creating directory %v: %v", dir, err)
 		}
 	}
 
-	// TREE
-	tree := newRedBlackTree[K, V]()
+	// DATA LAYOUT
+	manifest, err := NewManifest[K, V]()
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		log.Fatalf("Error loading or creating manifest: %v", err)
+	}
+
+	// COMPACTION STRATEGY
+	comp := &CompactionImpl[K, V]{}
 
 	// BLOOMFILTER
 	var bloom *BloomFilter[K]
-	bloom, err := loadBloomFromFile[K](bloomPath)
+	bloom, err = loadBloomFromFile[K](bloomPath)
 	if err != nil {
 		if _, ok := err.(*os.PathError); ok {
 			bloom = NewBloomFilter[K](BLOOM_SIZE, NUM_HASH_FUNCS)
@@ -79,15 +60,8 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 		}
 	}
 
-	// Create new WAL
-	db := &GoStore[K, V]{memTable: tree, bloom: bloom, max_size: maxSize}
-	db.wal, err = newWal[K, V](walPath)
-	if err != nil {
-		log.Fatalf("Error opening/creating WAL: %s", err)
-	}
-
-	// Recreate previous state if wal.dat is not empty
-	err = db.Replay(walPath)
+	// MEMTABLE
+	memtable, err := NewGostoreMemTable[K, V](maxSize)
 	if err != nil {
 		switch e := err.(type) {
 		case *LogApplyErr[K, V]:
@@ -100,56 +74,38 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 			log.Fatalf("Error on WAL replay: %v", err)
 		}
 	}
-	return db
+
+	return &GoStore[K, V]{memTable: memtable, bloom: bloom, manifest: manifest, compaction: comp}
 }
 
-// Iterate over segments from newest to oldest
-type SSTableIterator struct {
-	index    int
-	segments []string
-}
-
-func (iter *SSTableIterator) HasNext() bool {
-	return iter.index > 0
-}
-
-func (iter *SSTableIterator) Next() string {
-	if iter.HasNext() {
-		iter.index--
-		segment := iter.segments[iter.index]
-		return segment
-	}
-	return ""
-}
-
-// Returns a newest -> oldest segment iterator
-func newSSTableIterator(segments *[]string) *SSTableIterator {
-	return &SSTableIterator{index: len(*segments), segments: *segments}
-}
-
+// TODO refactor this
 // Write memTable to disk as SSTable
 func (self *GoStore[K, V]) flush() {
-	// Persist in-memory data
-	table := filepath.Join(segmentDir, fmt.Sprintf("%v.segment", time.Now().Unix()))
-	err := writeSSTable(self.memTable, table)
+	snapshot := self.memTable.Snapshot()
+
+	size, err := snapshot.Sync()
 	if err != nil {
-		log.Fatalf("Unable to build SSTable : %v", err)
+		panic("Panic on snapshot Sync")
+	}
+	// Discard memTable & write-ahead log
+	self.memTable.Clear()
+	self.mut.Unlock()
+
+	// Update manifest
+	self.manifest[0].Add(snapshot, size)
+	err = self.manifest.Persist()
+	if err != nil {
+		panic(err)
 	}
 
-	// Save filename for reads
-	self.segments = append(self.segments, table)
-
-	// Discard memTable
-	self.memTable.Clear()
-
-	// Discard write-ahead log
-	self.wal.Discard()
-
-	self.mut.Unlock()
-}
-
-func (self *GoStore[L, V]) exceeds_size() bool {
-	return self.memTable.Size() > self.max_size
+	// COMPACTION
+	for level := range self.manifest[:len(self.manifest)-1] {
+		if task := self.compaction.Trigger(level, self.manifest); task != nil {
+			fmt.Println("compacting")
+			self.compaction.Compact(task, self.manifest)
+		}
+	}
+	return
 }
 
 // Write the Key-Value pair to the memtable
@@ -158,12 +114,8 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 
 	// Write to memTable
 	self.memTable.Put(key, val)
-	err := self.wal.Write(key, val)
-	if err != nil {
-		return err
-	}
 	self.bloom.Add(key)
-	if self.exceeds_size() {
+	if self.memTable.ExceedsSize() {
 		go self.flush()
 		return nil
 	}
@@ -171,29 +123,42 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 	return nil
 }
 
+// 1. Check if key exists, exit early if not
+// 2. Read from memtable
+// 3. Read from level0 (unsorted)
+// 4. Read from level 1-3 (sorted)
 // Read the value from the given key. Will return error if value is not found.
 func (self *GoStore[K, V]) Read(key K) (V, error) {
 	self.mut.RLock()
 	defer self.mut.RUnlock()
+	if !self.bloom.Has(key) {
+		return SSTableEntry[K, V]{}.Value, errors.New("Not found")
+	}
 	// Read from memory
 	if val, ok := self.memTable.Get(key); ok {
 		return val, nil
-	}
-	// Read from disk
-	if len(self.segments) > 0 {
-		iter := newSSTableIterator(&self.segments)
-		for iter.HasNext() {
-			filename := iter.Next()
-			table, err := readSSTable[K, V](filename)
+	} else {
+		level0_tbl := self.manifest[0]
+
+		// Check unsorted level 0
+		for _, tbl := range level0_tbl.Tables {
+			err := tbl.Load()
 			if err != nil {
-				return Node[K, V]{}.Value, err
-			}
-			if val, ok := table.Search(key); ok {
-				return val, nil
-			} else {
-				continue
+				return Node[K, V]{}.Value, errors.New("Not found")
 			}
 
+			defer tbl.Clear()
+
+			if val, found := tbl.Search(key); found {
+				return val, nil
+			}
+		}
+
+		// binary search sorted levels 1:3
+		for _, level := range self.manifest[1:] {
+			if val, found := level.BinarySearch(key); found {
+				return val, nil
+			}
 		}
 	}
 	return Node[K, V]{}.Value, errors.New("Not found")
@@ -201,31 +166,12 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 
 // Delete a key from the DB
 func (self *GoStore[K, V]) Delete(key K) error {
-	panic("Unimplemented")
-}
-
-// Replay replays the Write-Ahead Log and applies changes to the database.
-func (self *GoStore[K, V]) Replay(filename string) error {
-	file, err := os.Open(filename)
-	if err != nil {
-		return err
+	if self.bloom.Has(key) {
+		self.memTable.Delete(key)
+		self.bloom.Remove(key)
+		return nil
 	}
-	defer file.Close()
-
-	dec := gob.NewDecoder(file)
-	for {
-		entry := &LogEntry[K, V]{}
-		if decodeErr := dec.Decode(entry); decodeErr != nil {
-			if decodeErr == io.EOF {
-				break // End of log file
-			}
-			return &LogApplyErr[K, V]{Entry: entry, Cause: decodeErr}
-		}
-
-		// Apply the entry to the database
-		entry.Apply(self)
-	}
-	return nil
+	return errors.New("Key not found")
 }
 
 // For debugging/tests: Use instead of Close to remove created files and release resources
@@ -235,23 +181,32 @@ func (self *GoStore[K, V]) Clean() error {
 		return nil
 	}
 
-	segments, err := os.ReadDir(segmentDir)
+	for _, levelDir := range numberToPathMap {
+		segments, err := os.ReadDir(levelDir)
+		if err != nil {
+			return err
+		}
+		for _, segment := range segments {
+			if strings.HasSuffix(segment.Name(), ".segment") {
+				err = os.Remove(filepath.Join(levelDir, segment.Name()))
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	err = os.Remove(manifestPath)
 	if err != nil {
 		return err
 	}
-
-	for _, segment := range segments {
-		if strings.HasSuffix(segment.Name(), ".segment") {
-			err = os.Remove(filepath.Join(segmentDir, segment.Name()))
-			if err != nil {
-				return err
-			}
-		}
+	err = os.Remove(bloomPath)
+	if err != nil {
+		return err
 	}
 	return os.Remove(walPath)
 }
 
 // Close closes all associated resources
 func (self *GoStore[K, V]) Close() error {
-	return self.wal.Close()
+	return self.memTable.Close()
 }

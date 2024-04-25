@@ -1,51 +1,125 @@
 package lsm_tree
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/gob"
 	"os"
 	"sort"
+	"sync"
+	"time"
 )
 
 // SSTableEntry represents an entry in the SSTable.
 type SSTableEntry[K cmp.Ordered, V any] struct {
-	Key   K
-	Value V
+	Operation Operation
+	Key       K
+	Value     V
 }
 
 // SSTable represents a Sorted String Table. Entries are sorted by key.
 type SSTable[K cmp.Ordered, V any] struct {
-	Entries []*SSTableEntry[K, V]
-	Size    int64  // size of file in bytes
-	Name    string // full filename
+	Entries   []*SSTableEntry[K, V]
+	file      *os.File
+	Name      string    // full filename
+	First     K         // First key in range
+	Last      K         // Last key in range
+	CreatedOn time.Time // Timestamp
+
+	mut sync.Mutex
 }
 
-// writeSSTable writes the contents of a memtable to an SSTable file.
-func writeSSTable[K cmp.Ordered, V any](tree MemTable[K, V], filename string) error {
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
+	return table.First >= anotherTable.First || table.Last <= anotherTable.Last
+}
+
+// Sync flushes all in-memory entries to stable storage
+func (table *SSTable[K, V]) Sync() (int64, error) {
+	_, err := table.Open()
+	if err != nil {
+		return 0, err
+	}
+	defer table.Close()
+	encoder := gob.NewEncoder(table.file)
+	err = encoder.Encode(table.Entries)
+	if err != nil {
+		return 0, err
+	}
+	table.file.Sync()
+	clear(table.Entries)
+	return table.Size()
+}
+
+// Closes file
+func (table *SSTable[K, V]) Close() error {
+	return table.file.Close()
+}
+
+// Opens file
+func (table *SSTable[K, V]) Open() (*SSTable[K, V], error) {
+	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0777)
+	if err != nil {
+		return nil, err
+	}
+	table.file = file
+	return table, nil
+}
+
+// Returns the file size in bytes
+func (table *SSTable[K, V]) Size() (int64, error) {
+	if table.file != nil {
+		fd, err := table.file.Stat()
+		if err != nil {
+			return 0, err
+		}
+		return fd.Size(), nil
+	}
+	_, err := table.Open()
+	defer table.Close()
+	fd, err := table.file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return fd.Size(), nil
+}
+
+// Load entries into memory
+// ** Must call Clear() after using Load to clear entries and unlock access to the table
+func (table *SSTable[K, V]) Load() error {
+	table.mut.Lock()
+	if len(table.Entries) != 0 {
+		return nil
+	}
+	_, err := table.Open()
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-
-	iter := tree.Iterator()
-	for iter.HasNext() {
-		node := iter.Next()
-		entry := &SSTableEntry[K, V]{Key: node.Key, Value: node.Value}
-		if err := encoder.Encode(entry); err != nil {
-			return err
-		}
-	}
-	_, err = buf.WriteTo(file)
-	return err
+	defer table.Close()
+	decoder := gob.NewDecoder(table.file)
+	return decoder.Decode(&table.Entries)
 }
 
-// readSSTable reads an SSTable file and returns its contents as an SSTable.
-func readSSTable[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) {
+// Clear table entries
+func (table *SSTable[K, V]) Clear() {
+	clear(table.Entries)
+	table.mut.Unlock()
+}
+
+// Search searches for a key in the SSTable.
+// Panics if attempt to search empty entries array
+func (table *SSTable[K, V]) Search(key K) (V, bool) {
+	if len(table.Entries) == 0 {
+		panic("Cannot search empty SSTable")
+	}
+	idx, found := sort.Find(len(table.Entries), func(i int) int { return cmp.Compare(key, table.Entries[i].Key) })
+	if found {
+		return table.Entries[idx].Value, true
+	}
+	return SSTableEntry[K, V]{}.Value, false
+}
+
+// DEPRECATED
+// readSSTableFromFile reads an SSTable file and returns its contents as an SSTable.
+func readSSTableFromFile[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -61,15 +135,5 @@ func readSSTable[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) 
 		}
 		entries = append(entries, &entry)
 	}
-	fd, err := file.Stat()
-	return &SSTable[K, V]{Entries: entries, Size: fd.Size(), Name: filename}, err
-}
-
-// Search searches for a key in the SSTable.
-func (table *SSTable[K, V]) Search(key K) (V, bool) {
-	i := sort.Search(len(table.Entries), func(i int) bool { return table.Entries[i].Key >= key })
-	if i < len(table.Entries) && table.Entries[i].Key == key {
-		return table.Entries[i].Value, true
-	}
-	return table.Entries[i].Value, false
+	return &SSTable[K, V]{Entries: entries, Name: filename, file: file}, err
 }

@@ -5,10 +5,16 @@ import (
 	"fmt"
 )
 
+type RedBlackTree[K cmp.Ordered, V any] struct {
+	size uint
+	root *Node[K, V]
+}
+
 type Node[K cmp.Ordered, V any] struct {
 	left, right, parent *Node[K, V]
 	Key                 K
 	Value               V
+	Operation           Operation
 	isBlack             bool
 }
 
@@ -16,8 +22,8 @@ func (node *Node[K, V]) String() string {
 	return fmt.Sprintf("Node(black: %v) {%v %v}", node.isBlack, node.Key, node.Value)
 }
 
-func newNode[K cmp.Ordered, V any](key K, val V) *Node[K, V] {
-	return &Node[K, V]{isBlack: false, Key: key, Value: val, left: nil, right: nil, parent: nil}
+func newNode[K cmp.Ordered, V any](key K, val V, op Operation) *Node[K, V] {
+	return &Node[K, V]{isBlack: false, Key: key, Value: val, left: nil, right: nil, parent: nil, Operation: op}
 }
 
 type RBTIterator[K cmp.Ordered, V any] struct {
@@ -54,16 +60,11 @@ func sortedNodeList[K cmp.Ordered, V any](root *Node[K, V], list *[]*Node[K, V])
 	sortedNodeList(root.right, list)
 }
 
-type RedBlackTree[K cmp.Ordered, V any] struct {
-	size uint
-	root *Node[K, V]
-}
-
 func (rbt *RedBlackTree[K, V]) Iterator() Iterator[K, V] {
 	return newRBTIterator(rbt.root, rbt.Size())
 }
 
-func newRedBlackTree[K cmp.Ordered, V any]() MemTable[K, V] {
+func newRedBlackTree[K cmp.Ordered, V any]() *RedBlackTree[K, V] {
 	return &RedBlackTree[K, V]{}
 }
 
@@ -92,7 +93,13 @@ func (rbt *RedBlackTree[K, V]) printTree(root *Node[K, V], space int) {
 }
 
 func (rbt *RedBlackTree[K, V]) Put(key K, val V) {
-	rbt.root = rbt.put(rbt.root, key, val)
+	rbt.root = rbt.put(rbt.root, key, val, INSERT)
+	rbt.size++
+	rbt.root.isBlack = true
+}
+
+func (rbt *RedBlackTree[K, V]) Delete(key K) {
+	rbt.root = rbt.put(rbt.root, key, Node[K, V]{}.Value, DELETE)
 	rbt.size++
 	rbt.root.isBlack = true
 }
@@ -104,15 +111,15 @@ func isRed[K cmp.Ordered, V any](node *Node[K, V]) bool {
 	return !node.isBlack
 }
 
-func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V) *Node[K, V] {
+func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V, op Operation) *Node[K, V] {
 	if node == nil {
-		return newNode(key, val)
+		return newNode(key, val, op)
 	}
 	comp := cmp.Compare(key, node.Key)
 	if comp < 0 {
-		node.left = rbt.put(node.left, key, val)
+		node.left = rbt.put(node.left, key, val, op)
 	} else if comp > 0 {
-		node.right = rbt.put(node.right, key, val)
+		node.right = rbt.put(node.right, key, val, op)
 	} else {
 		node.Value = val
 	}
@@ -156,6 +163,7 @@ func (rbt *RedBlackTree[K, V]) leftRotate(node *Node[K, V]) *Node[K, V] {
 
 func (rbt *RedBlackTree[K, V]) Get(key K) (V, bool) {
 	node := rbt.root
+
 	return rbt.get(node, key)
 }
 

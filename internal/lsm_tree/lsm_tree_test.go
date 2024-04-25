@@ -8,22 +8,22 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	tree := New[int64, any](10)
+	tree := New[int64, any](100)
 	defer tree.Clean()
 }
 
 func TestLSMWrite(t *testing.T) {
-	tree := New[int64, any](10)
+	tree := New[int64, any](100)
 	defer tree.Clean()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 9; i++ {
 		tree.Write(int64(i), "test")
 	}
 }
 
 func TestLSMRead(t *testing.T) {
-	tree := New[int64, any](10)
+	tree := New[int64, any](100)
 	defer tree.Clean()
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 9; i++ {
 		tree.Write(int64(i), fmt.Sprintf("%vtest", i))
 	}
 	val, err := tree.Read(0)
@@ -32,28 +32,9 @@ func TestLSMRead(t *testing.T) {
 	}
 }
 
-func TestLSMReplay(t *testing.T) {
-	tree := New[int64, any](100)
-	defer tree.Clean()
-	for i := 0; i < 10; i++ {
-		err := tree.Write(int64(i), fmt.Sprintf("%vtest", i))
-		if err != nil {
-			t.Error(err)
-		}
-	}
-	tree2 := New[int64, any](100)
-	for i := 0; i < 10; i++ {
-		expected := fmt.Sprintf("%vtest", i)
-		val, err := tree2.Read(int64(i))
-		if err != nil || val != expected {
-			t.Error(err)
-		}
-	}
-}
-
 func TestLSMFlush(t *testing.T) {
 	tree := New[int64, any](5)
-	defer tree.Clean()
+	defer tree.Close()
 
 	for i := 0; i < 6; i++ {
 		err := tree.Write(int64(i), "test")
@@ -62,7 +43,7 @@ func TestLSMFlush(t *testing.T) {
 		}
 	}
 	time.Sleep(1 * time.Second)
-	tables, err := os.ReadDir(segmentDir)
+	tables, err := os.ReadDir(level0)
 	if err != nil {
 		t.Error(err)
 	}

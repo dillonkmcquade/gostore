@@ -14,9 +14,15 @@ run:
 	$(debug) go run cmd/gostore/main.go -port=5000
 
 clean:
-	rm gostore
+	rm --force gostore
+	rm -f ~/.gostore/manifest.json
+	rm -f ~/.gostore/wal.dat
+	rm -f ~/.gostore/l0/*
+	rm -f ~/.gostore/l1/*
+	rm -f ~/.gostore/l2/*
+	rm -f ~/.gostore/l3/*
 
-test: 
+test: clean 
 	go test -v ./internal/... -count=1
 
 integration-test:

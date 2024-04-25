@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
-	"sync"
 )
 
 type Operation byte
@@ -18,7 +17,6 @@ const (
 type WAL[K cmp.Ordered, V any] struct {
 	file    *os.File
 	encoder *gob.Encoder
-	mut     sync.Mutex
 }
 
 // Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
@@ -29,27 +27,23 @@ func newWal[K cmp.Ordered, V any](filename string) (*WAL[K, V], error) {
 
 // Discards the contents of the current WAL
 func (self *WAL[K, V]) Discard() error {
-	self.mut.Lock()
 	err := self.file.Truncate(0)
 	if err != nil {
 		return err
 	}
 	_, err = self.file.Seek(0, 0)
-	self.mut.Unlock()
 	return err
 }
 
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
 	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}
-	self.mut.Lock()
 	err := self.encoder.Encode(entry)
 	if err != nil {
 		return err
 	}
 	// Ensure the entry is flushed to disk immediately.
 	err = self.file.Sync()
-	self.mut.Unlock()
 	return err
 }
 
@@ -64,10 +58,10 @@ type LogEntry[K cmp.Ordered, V any] struct {
 	Value     V
 }
 
-func (self *LogEntry[K, V]) Apply(lsm *GoStore[K, V]) {
+func (self *LogEntry[K, V]) Apply(rbt *RedBlackTree[K, V]) {
 	switch self.Operation {
 	case INSERT:
-		lsm.memTable.Put(self.Key, self.Value)
+		rbt.Put(self.Key, self.Value)
 	case DELETE:
 		panic("Unimplemented")
 	}

@@ -34,6 +34,15 @@ func (bf *BloomFilter[K]) Add(key K) {
 	}
 }
 
+func (bf *BloomFilter[K]) Remove(key K) {
+	for _, hf := range bf.HashFuncs {
+		hf.Reset()
+		hf.Write([]byte(fmt.Sprintf("%v", key)))
+		index := hf.Sum64() % uint64(len(bf.Bitset))
+		bf.Bitset[index] = false
+	}
+}
+
 // Has tests whether a key is in the Bloom filter.
 func (bf *BloomFilter[K]) Has(key K) bool {
 	for _, hf := range bf.HashFuncs {

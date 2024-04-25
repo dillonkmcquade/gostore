@@ -46,7 +46,7 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 		return 0, err
 	}
 	table.file.Sync()
-	clear(table.Entries)
+	table.Entries = []*SSTableEntry[K, V]{}
 	return table.Size()
 }
 
@@ -101,7 +101,7 @@ func (table *SSTable[K, V]) Load() error {
 
 // Clear table entries
 func (table *SSTable[K, V]) Clear() {
-	clear(table.Entries)
+	table.Entries = []*SSTableEntry[K, V]{}
 	table.mut.Unlock()
 }
 
@@ -119,6 +119,7 @@ func (table *SSTable[K, V]) Search(key K) (V, bool) {
 }
 
 // DEPRECATED
+//
 // readSSTableFromFile reads an SSTable file and returns its contents as an SSTable.
 func readSSTableFromFile[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) {
 	file, err := os.Open(filename)

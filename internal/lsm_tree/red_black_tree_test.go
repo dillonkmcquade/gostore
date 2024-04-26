@@ -39,8 +39,8 @@ func TestRBT(t *testing.T) {
 		tree := &RedBlackTree[int, any]{}
 		tree.Put(5, "value")
 		tree.Put(5, "value") // Inserting duplicate
-		if tree.Size() != 2 {
-			t.Error("Should be 2")
+		if tree.Size() != 1 {
+			t.Error("Should be 1")
 		}
 	})
 

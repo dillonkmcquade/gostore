@@ -92,15 +92,15 @@ func (rbt *RedBlackTree[K, V]) printTree(root *Node[K, V], space int) {
 	}
 }
 
+// Insert or update value at key
 func (rbt *RedBlackTree[K, V]) Put(key K, val V) {
 	rbt.root = rbt.put(rbt.root, key, val, INSERT)
-	rbt.size++
 	rbt.root.isBlack = true
 }
 
+// Update node Op to be DELETE
 func (rbt *RedBlackTree[K, V]) Delete(key K) {
 	rbt.root = rbt.put(rbt.root, key, Node[K, V]{}.Value, DELETE)
-	rbt.size++
 	rbt.root.isBlack = true
 }
 
@@ -113,6 +113,7 @@ func isRed[K cmp.Ordered, V any](node *Node[K, V]) bool {
 
 func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V, op Operation) *Node[K, V] {
 	if node == nil {
+		rbt.size++
 		return newNode(key, val, op)
 	}
 	comp := cmp.Compare(key, node.Key)
@@ -122,6 +123,7 @@ func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V, op Operation)
 		node.right = rbt.put(node.right, key, val, op)
 	} else {
 		node.Value = val
+		node.Operation = op
 	}
 
 	if isRed(node.right) && !isRed(node.left) {
@@ -176,6 +178,6 @@ func (rbt *RedBlackTree[K, V]) get(node *Node[K, V], key K) (V, bool) {
 	} else if key < node.Key {
 		return rbt.get(node.left, key)
 	} else {
-		return node.Value, true
+		return node.Value, node.Operation != DELETE
 	}
 }

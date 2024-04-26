@@ -91,9 +91,9 @@ func (man *Manifest[K, V]) Persist(p *string) error {
 }
 
 type ManifestOpts struct {
-	path            string
-	num_levels      int
-	level0_max_size int64
+	path            string // Path to manifest
+	num_levels      int    // Number of compaction levels
+	level0_max_size int64  // Size of level 0
 }
 
 // Create new manifest

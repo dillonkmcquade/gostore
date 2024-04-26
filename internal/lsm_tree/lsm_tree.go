@@ -86,7 +86,7 @@ func New[K cmp.Ordered, V any](opts *NewLSMOpts) LSMTree[K, V] {
 
 // Write memTable to disk as SSTable
 func (self *GoStore[K, V]) flush() {
-	snapshot := self.memTable.Snapshot()
+	snapshot := self.memTable.Snapshot(level0)
 
 	size, err := snapshot.Sync()
 	if err != nil {

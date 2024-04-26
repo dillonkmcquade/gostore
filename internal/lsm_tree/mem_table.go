@@ -63,8 +63,9 @@ func (tbl *GostoreMemTable[K, V]) Delete(key K) {
 	tbl.rbt.Delete(key)
 }
 
-// Replay replays the Write-Ahead Log and applies changes to the database.
+// Restores database state from Write-Ahead-Log
 func (self *GostoreMemTable[K, V]) Replay(filename string) error {
+	self.rbt.Clear()
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -88,13 +89,13 @@ func (self *GostoreMemTable[K, V]) Replay(filename string) error {
 }
 
 // Returns an SSTable filled with entries, with no size
-func (tbl *GostoreMemTable[K, V]) Snapshot() *SSTable[K, V] {
+func (tbl *GostoreMemTable[K, V]) Snapshot(destDir string) *SSTable[K, V] {
 	tbl.mut.Lock()
 	defer tbl.mut.Unlock()
 	timestamp := time.Now()
 	sstable := &SSTable[K, V]{
 		Entries:   make([]*SSTableEntry[K, V], 0),
-		Name:      filepath.Join(level0, fmt.Sprintf("%v.segment", timestamp.Unix())),
+		Name:      filepath.Join(destDir, fmt.Sprintf("%v.segment", timestamp.Unix())),
 		CreatedOn: timestamp,
 	}
 	iter := tbl.rbt.Iterator()

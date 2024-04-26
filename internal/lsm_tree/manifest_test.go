@@ -71,22 +71,6 @@ func TestLevelBinarySearch(t *testing.T) {
 		}
 		man[0].Tables[i].Close()
 	}
-
-	// if i, found := man[0].BinarySearch(209); !found {
-	// 	man[0].Tables[i].Open()
-	// 	man[0].Tables[i].Search(400)
-	// 	man[0].Tables[i].Close()
-	// }
-	// if i, found := man[0].BinarySearch(350); !found {
-	// 	man[0].Tables[i].Open()
-	// 	man[0].Tables[i].Search(400)
-	// 	man[0].Tables[i].Close()
-	// }
-	// if i, found := man[0].BinarySearch(1000); found {
-	// 	man[0].Tables[i].Open()
-	// 	man[0].Tables[i].Search(400)
-	// 	man[0].Tables[i].Close()
-	// }
 }
 
 func TestLevelAdd(t *testing.T) {

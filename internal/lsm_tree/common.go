@@ -80,7 +80,7 @@ type MemTable[K cmp.Ordered, V any] interface {
 	// Should memtable be flushed
 	ExceedsSize() bool
 	// Reads memtable entries into SSTable
-	Snapshot() *SSTable[K, V]
+	Snapshot(string) *SSTable[K, V]
 	// Clear points root to nil and makes size = 0
 	Clear()
 	// Closes active resources

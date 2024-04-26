@@ -35,6 +35,14 @@ func (self *WAL[K, V]) Discard() error {
 	return err
 }
 
+func (self *WAL[K, V]) Size() (int64, error) {
+	fd, err := self.file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return fd.Size(), nil
+}
+
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
 	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}

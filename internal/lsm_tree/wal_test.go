@@ -49,3 +49,26 @@ func TestWALDecode(t *testing.T) {
 		t.Error("Should be 5")
 	}
 }
+
+func TestWALDiscard(t *testing.T) {
+	tmpdir := t.TempDir()
+	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.dat"))
+	if err != nil {
+		t.Error(err)
+	}
+	defer wal.Close()
+	for i := 0; i < 25; i++ {
+		err = wal.Write(i, "Helloworld")
+		if err != nil {
+			t.Error("error on Write:14")
+		}
+	}
+	wal.Discard()
+	size, err := wal.Size()
+	if err != nil {
+		t.Error(err)
+	}
+	if size != 0 {
+		t.Errorf("File size should be 0, received %v", size)
+	}
+}

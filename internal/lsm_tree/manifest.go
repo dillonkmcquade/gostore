@@ -90,24 +90,24 @@ func (man *Manifest[K, V]) Persist(p *string) error {
 	return encoder.Encode(man)
 }
 
+type ManifestOpts struct {
+	path            string
+	num_levels      int
+	level0_max_size int64
+}
+
 // Create new manifest
-func NewManifest[K cmp.Ordered, V any](filename *string) (*Manifest[K, V], error) {
-	var path string
-	if filename == nil {
-		path = manifestPath
-	} else {
-		path = *filename
-	}
-	_, err := os.Stat(path)
+func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], error) {
+	_, err := os.Stat(opts.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			manifest := &Manifest[K, V]{}
 
-			assert(len(manifest) == NUM_LEVELS)
+			assert(len(manifest) == opts.num_levels)
 
-			level0_max_size := int64(LEVEL0_MAX_SIZE * 1024 * 1024) // convert to bytes
+			level0_max_size := opts.level0_max_size * 1024 * 1024 // convert to bytes
 
-			for levelNumber := 0; levelNumber < NUM_LEVELS; levelNumber++ {
+			for levelNumber := 0; levelNumber < opts.num_levels; levelNumber++ {
 				multiplier := math.Pow(10, float64(levelNumber))
 				manifest[levelNumber] = &Level[K, V]{
 					Number:  levelNumber,
@@ -119,7 +119,7 @@ func NewManifest[K cmp.Ordered, V any](filename *string) (*Manifest[K, V], error
 		}
 		return nil, err
 	}
-	return loadManifest[K, V](path)
+	return loadManifest[K, V](opts.path)
 }
 
 func loadManifest[K cmp.Ordered, V any](p string) (*Manifest[K, V], error) {

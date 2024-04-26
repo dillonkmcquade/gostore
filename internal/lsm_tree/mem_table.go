@@ -108,12 +108,17 @@ func (tbl *GostoreMemTable[K, V]) Snapshot() *SSTable[K, V] {
 	return sstable
 }
 
-func NewGostoreMemTable[K cmp.Ordered, V any](max_size uint) (*GostoreMemTable[K, V], error) {
-	wal, err := newWal[K, V](walPath)
+type GoStoreMemTableOpts struct {
+	walPath  string // Path to desired WAL location
+	max_size uint   // Max size before triggering flush
+}
+
+func NewGostoreMemTable[K cmp.Ordered, V any](opts *GoStoreMemTableOpts) (*GostoreMemTable[K, V], error) {
+	wal, err := newWal[K, V](opts.walPath)
 	if err != nil {
 		return nil, err
 	}
-	memtable := &GostoreMemTable[K, V]{rbt: &RedBlackTree[K, V]{}, max_size: max_size, wal: wal}
-	err = memtable.Replay(walPath)
+	memtable := &GostoreMemTable[K, V]{rbt: &RedBlackTree[K, V]{}, max_size: opts.max_size, wal: wal}
+	err = memtable.Replay(opts.walPath)
 	return memtable, err
 }

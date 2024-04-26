@@ -28,10 +28,16 @@ type GoStore[K cmp.Ordered, V any] struct {
 	mut sync.RWMutex
 }
 
+type NewLSMOpts struct {
+	BloomOpts    *BloomFilterOpts
+	MemTableOpts *GoStoreMemTableOpts
+	ManifestOpts *ManifestOpts
+}
+
 // Creates a new LSMTree. Creates ~/.gostore if it does not exist.
 //
 // ***Will exit with non-zero status if error is returned during any of the initialization steps.
-func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
+func New[K cmp.Ordered, V any](opts *NewLSMOpts) LSMTree[K, V] {
 	// Create application directories
 	for _, dir := range appDirs {
 		err := mkDir(dir)
@@ -41,7 +47,7 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 	}
 
 	// DATA LAYOUT
-	manifest, err := NewManifest[K, V](nil)
+	manifest, err := NewManifest[K, V](opts.ManifestOpts)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		log.Fatalf("Error loading or creating manifest: %v", err)
 	}
@@ -51,17 +57,17 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 
 	// BLOOMFILTER
 	var bloom *BloomFilter[K]
-	bloom, err = loadBloomFromFile[K](bloomPath)
+	bloom, err = loadBloomFromFile[K](opts.BloomOpts.path)
 	if err != nil {
 		if _, ok := err.(*os.PathError); ok {
-			bloom = NewBloomFilter[K](BLOOM_SIZE, NUM_HASH_FUNCS)
+			bloom = NewBloomFilter[K](opts.BloomOpts)
 		} else {
 			log.Fatal(err)
 		}
 	}
 
 	// MEMTABLE
-	memtable, err := NewGostoreMemTable[K, V](maxSize)
+	memtable, err := NewGostoreMemTable[K, V](opts.MemTableOpts)
 	if err != nil {
 		switch e := err.(type) {
 		case *LogApplyErr[K, V]:
@@ -78,7 +84,6 @@ func New[K cmp.Ordered, V any](maxSize uint) LSMTree[K, V] {
 	return &GoStore[K, V]{memTable: memtable, bloom: bloom, manifest: manifest, compaction: comp}
 }
 
-// TODO refactor this
 // Write memTable to disk as SSTable
 func (self *GoStore[K, V]) flush() {
 	snapshot := self.memTable.Snapshot()

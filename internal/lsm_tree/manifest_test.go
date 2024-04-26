@@ -8,14 +8,24 @@ import (
 
 func TestNewManifest(t *testing.T) {
 	defer CleanAppFiles()
-	_, err := NewManifest[int64, string](nil)
+	opts := &ManifestOpts{
+		path:            manifestPath,
+		num_levels:      NUM_LEVELS,
+		level0_max_size: LEVEL0_MAX_SIZE,
+	}
+	_, err := NewManifest[int64, string](opts)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestManifestPersist(t *testing.T) {
-	man, err := NewManifest[int64, string](nil)
+	opts := &ManifestOpts{
+		path:            manifestPath,
+		num_levels:      NUM_LEVELS,
+		level0_max_size: LEVEL0_MAX_SIZE,
+	}
+	man, err := NewManifest[int64, string](opts)
 	if err != nil {
 		t.Error(err)
 	}
@@ -35,7 +45,8 @@ func TestManifestPersist(t *testing.T) {
 
 func TestLevelBinarySearch(t *testing.T) {
 	path := "../../data/sortedManifest.json"
-	man, err := NewManifest[int64, string](&path)
+	opts := &ManifestOpts{path: path, num_levels: NUM_LEVELS, level0_max_size: LEVEL0_MAX_SIZE}
+	man, err := NewManifest[int64, string](opts)
 	if err != nil {
 		t.Error(err)
 	}
@@ -154,6 +165,3 @@ func TestLevelRemove(t *testing.T) {
 		t.Error("Size should be 0")
 	}
 }
-
-// func TestManifestAdd(t *testing.T) {}
-// func TestManifestAdd(t *testing.T) {}

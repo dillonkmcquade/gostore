@@ -44,7 +44,9 @@ type CompactionTask[K cmp.Ordered, V any] struct {
 	isLowerLevelBottomLevel bool
 }
 
-type CompactionImpl[K cmp.Ordered, V any] struct{}
+type CompactionImpl[K cmp.Ordered, V any] struct {
+	LevelPaths []string
+}
 
 // TODO
 func (c *CompactionImpl[K, V]) Compact(task *CompactionTask[K, V], manifest *Manifest[K, V]) error {
@@ -62,7 +64,7 @@ func (c *CompactionImpl[K, V]) Compact(task *CompactionTask[K, V], manifest *Man
 		output := merge(upperLevelTable, lowerLevelTable)
 
 		// Dynamically set name
-		output.Name = filepath.Join(numberToPathMap[task.lowerLevel], fmt.Sprintf("%v.segment", output.CreatedOn.Unix()))
+		output.Name = filepath.Join(c.LevelPaths[task.lowerLevel], fmt.Sprintf("%v.segment", output.CreatedOn.Unix()))
 
 		// Save table to disk
 		size, err := output.Sync()
@@ -70,19 +72,19 @@ func (c *CompactionImpl[K, V]) Compact(task *CompactionTask[K, V], manifest *Man
 			return err
 		}
 		// update manifest as we go
-		manifest[task.lowerLevel].Add(output, size)
+		manifest.Levels[task.lowerLevel].Add(output, size)
 
 		lowerTableSize, err := lowerLevelTable.Size()
 		if err != nil {
 			return err
 		}
-		manifest[task.lowerLevel].Remove(lowerLevelTable, lowerTableSize)
+		manifest.Levels[task.lowerLevel].Remove(lowerLevelTable, lowerTableSize)
 
 		upperTableSize, err := upperLevelTable.Size()
 		if err != nil {
 			return err
 		}
-		manifest[*task.upperLevel].Remove(upperLevelTable, upperTableSize)
+		manifest.Levels[*task.upperLevel].Remove(upperLevelTable, upperTableSize)
 
 	}
 	return nil
@@ -102,13 +104,13 @@ func (c *CompactionImpl[K, V]) generateCompactionTask(level int, manifest *Manif
 	if level == 0 { // Compact all upperlevel tables
 		task := &CompactionTask[K, V]{
 			upperLevel:              nil,
-			upperLevelIDs:           manifest[level].Tables,
+			upperLevelIDs:           manifest.Levels[level].Tables,
 			lowerLevel:              level + 1,
 			lowerLevelIDs:           make([]*SSTable[K, V], 0),
 			isLowerLevelBottomLevel: (level + 1) == 3,
 		}
-		for _, table := range manifest[level].Tables {
-			for _, lowerLevelTable := range manifest[level+1].Tables {
+		for _, table := range manifest.Levels[level].Tables {
+			for _, lowerLevelTable := range manifest.Levels[level+1].Tables {
 				if table.Overlaps(lowerLevelTable) {
 					task.lowerLevelIDs = append(task.lowerLevelIDs, lowerLevelTable)
 				}
@@ -125,8 +127,8 @@ func (c *CompactionImpl[K, V]) generateCompactionTask(level int, manifest *Manif
 		lowerLevelIDs:           make([]*SSTable[K, V], 0),
 		isLowerLevelBottomLevel: (level + 1) == 3,
 	}
-	for _, table := range manifest[level].Tables {
-		for _, lowerLevelTable := range manifest[level+1].Tables {
+	for _, table := range manifest.Levels[level].Tables {
+		for _, lowerLevelTable := range manifest.Levels[level+1].Tables {
 			if table.Overlaps(lowerLevelTable) {
 				task.lowerLevelIDs = append(task.lowerLevelIDs, lowerLevelTable)
 				task.upperLevelIDs = append(task.upperLevelIDs, table)
@@ -139,7 +141,7 @@ func (c *CompactionImpl[K, V]) generateCompactionTask(level int, manifest *Manif
 
 // Returns compaction task if level triggers a compaction
 func (c *CompactionImpl[K, V]) Trigger(level int, manifest *Manifest[K, V]) *CompactionTask[K, V] {
-	if manifest[level].Size >= manifest[level].MaxSize {
+	if manifest.Levels[level].Size >= manifest.Levels[level].MaxSize {
 		return c.generateCompactionTask(level, manifest)
 	}
 	return nil

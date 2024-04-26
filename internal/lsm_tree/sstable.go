@@ -76,7 +76,7 @@ func (table *SSTable[K, V]) Size() (int64, error) {
 func (table *SSTable[K, V]) Open() error {
 	assert(len(table.Entries) == 0)
 	table.mut.Lock()
-	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0777)
+	file, err := os.OpenFile(table.Name, os.O_RDONLY, 0777)
 	if err != nil {
 		return err
 	}

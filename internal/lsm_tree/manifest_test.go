@@ -7,11 +7,12 @@ import (
 )
 
 func TestNewManifest(t *testing.T) {
-	defer CleanAppFiles()
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "manifest.json")
 	opts := &ManifestOpts{
-		path:            manifestPath,
-		num_levels:      NUM_LEVELS,
-		level0_max_size: LEVEL0_MAX_SIZE,
+		Path:            path,
+		Num_levels:      NUM_LEVELS,
+		Level0_max_size: LEVEL0_MAX_SIZE,
 	}
 	_, err := NewManifest[int64, string](opts)
 	if err != nil {
@@ -20,24 +21,24 @@ func TestNewManifest(t *testing.T) {
 }
 
 func TestManifestPersist(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "manifest.json")
 	opts := &ManifestOpts{
-		path:            manifestPath,
-		num_levels:      NUM_LEVELS,
-		level0_max_size: LEVEL0_MAX_SIZE,
+		Path:            path,
+		Num_levels:      NUM_LEVELS,
+		Level0_max_size: LEVEL0_MAX_SIZE,
 	}
 	man, err := NewManifest[int64, string](opts)
 	if err != nil {
 		t.Error(err)
 	}
 
-	tmp := t.TempDir()
-	manFile := filepath.Join(tmp, "manifest.json")
-	err = man.Persist(&manFile)
+	err = man.Persist()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = loadManifest[int64, string](manFile)
+	_, err = loadManifest[int64, string](path)
 	if err != nil {
 		t.Error(err)
 	}
@@ -45,31 +46,31 @@ func TestManifestPersist(t *testing.T) {
 
 func TestLevelBinarySearch(t *testing.T) {
 	path := "../../data/sortedManifest.json"
-	opts := &ManifestOpts{path: path, num_levels: NUM_LEVELS, level0_max_size: LEVEL0_MAX_SIZE}
+	opts := &ManifestOpts{Path: path, Num_levels: NUM_LEVELS, Level0_max_size: LEVEL0_MAX_SIZE}
 	man, err := NewManifest[int64, string](opts)
 	if err != nil {
 		t.Error(err)
 	}
 
-	if i, found := man[0].BinarySearch(0); found {
-		err = man[0].Tables[i].Open()
+	if i, found := man.Levels[0].BinarySearch(0); found {
+		err = man.Levels[0].Tables[i].Open()
 		if err != nil {
 			t.Error(err)
 		}
-		if _, found := man[0].Tables[i].Search(0); !found {
+		if _, found := man.Levels[0].Tables[i].Search(0); !found {
 			t.Error("Should contain 0")
 		}
-		man[0].Tables[i].Close()
+		man.Levels[0].Tables[i].Close()
 	}
-	if i, found := man[0].BinarySearch(400); found {
-		err = man[0].Tables[i].Open()
+	if i, found := man.Levels[0].BinarySearch(400); found {
+		err = man.Levels[0].Tables[i].Open()
 		if err != nil {
 			t.Error(err)
 		}
-		if _, found := man[0].Tables[i].Search(400); !found {
+		if _, found := man.Levels[0].Tables[i].Search(400); !found {
 			t.Error("Should contain 400")
 		}
-		man[0].Tables[i].Close()
+		man.Levels[0].Tables[i].Close()
 	}
 }
 

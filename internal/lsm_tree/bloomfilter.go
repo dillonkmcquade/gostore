@@ -18,7 +18,6 @@ type BloomFilter[K cmp.Ordered] struct {
 type BloomFilterOpts struct {
 	size         int
 	numHashFuncs int
-	path         string // Path to bloom filter
 }
 
 // NewBloomFilter creates a new Bloom filter with the specified size and number of hash functions.

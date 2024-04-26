@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -25,26 +24,84 @@ type GoStore[K cmp.Ordered, V any] struct {
 	// Verify if the key exists in the DB quickly
 	bloom *BloomFilter[K]
 
+	levelPaths []string
+
 	mut sync.RWMutex
 }
 
-type NewLSMOpts struct {
+type LSMOpts struct {
 	BloomOpts    *BloomFilterOpts
 	MemTableOpts *GoStoreMemTableOpts
 	ManifestOpts *ManifestOpts
+	GoStorePath  string
+	BloomPath    string
+	LevelPaths   []string
 }
 
-// Creates a new LSMTree. Creates ~/.gostore if it does not exist.
-//
-// ***Will exit with non-zero status if error is returned during any of the initialization steps.
-func New[K cmp.Ordered, V any](opts *NewLSMOpts) LSMTree[K, V] {
-	// Create application directories
-	for _, dir := range appDirs {
+func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
+	return &LSMOpts{
+		BloomOpts: &BloomFilterOpts{
+			size:         960000,
+			numHashFuncs: 7,
+		},
+		MemTableOpts: &GoStoreMemTableOpts{
+			walPath:  filepath.Join(gostorepath, "wal.dat"),
+			max_size: 20000,
+		},
+		ManifestOpts: &ManifestOpts{
+			Path:            filepath.Join(gostorepath, "manifest.json"),
+			Num_levels:      4,
+			Level0_max_size: 300,
+		},
+		GoStorePath: gostorepath,
+		BloomPath:   filepath.Join(gostorepath, "bloom.dat"),
+		LevelPaths: []string{
+			filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
+			filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
+		},
+	}
+}
+
+// Smaller defaults used for testing
+func NewTestLSMOpts(gostorepath string) *LSMOpts {
+	return &LSMOpts{
+		BloomOpts: &BloomFilterOpts{
+			size:         1000,
+			numHashFuncs: 1,
+		},
+		MemTableOpts: &GoStoreMemTableOpts{
+			walPath:  filepath.Join(gostorepath, "wal.dat"),
+			max_size: 1000,
+		},
+		ManifestOpts: &ManifestOpts{
+			Path:            filepath.Join(gostorepath, "manifest.json"),
+			Num_levels:      4,
+			Level0_max_size: 1,
+		},
+		GoStorePath: gostorepath,
+		BloomPath:   filepath.Join(gostorepath, "bloom.dat"),
+		LevelPaths: []string{
+			filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
+			filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
+		},
+	}
+}
+
+func createAppFiles(opts *LSMOpts) {
+	for _, dir := range opts.LevelPaths {
 		err := mkDir(dir)
 		if err != nil {
 			log.Fatalf("Error while creating directory %v: %v", dir, err)
 		}
 	}
+}
+
+// Creates a new LSMTree. Creates ~/.gostore if it does not exist.
+//
+// ***Will exit with non-zero status if error is returned during any of the initialization steps.
+func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
+	// Create application directories
+	createAppFiles(opts)
 
 	// DATA LAYOUT
 	manifest, err := NewManifest[K, V](opts.ManifestOpts)
@@ -53,11 +110,11 @@ func New[K cmp.Ordered, V any](opts *NewLSMOpts) LSMTree[K, V] {
 	}
 
 	// COMPACTION STRATEGY
-	comp := &CompactionImpl[K, V]{}
+	comp := &CompactionImpl[K, V]{LevelPaths: opts.LevelPaths}
 
 	// BLOOMFILTER
 	var bloom *BloomFilter[K]
-	bloom, err = loadBloomFromFile[K](opts.BloomOpts.path)
+	bloom, err = loadBloomFromFile[K](opts.BloomPath)
 	if err != nil {
 		if _, ok := err.(*os.PathError); ok {
 			bloom = NewBloomFilter[K](opts.BloomOpts)
@@ -81,12 +138,12 @@ func New[K cmp.Ordered, V any](opts *NewLSMOpts) LSMTree[K, V] {
 		}
 	}
 
-	return &GoStore[K, V]{memTable: memtable, bloom: bloom, manifest: manifest, compaction: comp}
+	return &GoStore[K, V]{memTable: memtable, bloom: bloom, manifest: manifest, compaction: comp, levelPaths: opts.LevelPaths}
 }
 
 // Write memTable to disk as SSTable
 func (self *GoStore[K, V]) flush() {
-	snapshot := self.memTable.Snapshot(level0)
+	snapshot := self.memTable.Snapshot(self.levelPaths[0])
 
 	size, err := snapshot.Sync()
 	if err != nil {
@@ -97,14 +154,14 @@ func (self *GoStore[K, V]) flush() {
 	self.mut.Unlock()
 
 	// Update manifest
-	self.manifest[0].Add(snapshot, size)
-	err = self.manifest.Persist(nil)
+	self.manifest.Levels[0].Add(snapshot, size)
+	err = self.manifest.Persist()
 	if err != nil {
 		panic(err)
 	}
 
 	// COMPACTION
-	for level := range self.manifest[:len(self.manifest)-1] {
+	for level := range self.manifest.Levels[:len(self.manifest.Levels)-1] {
 		if task := self.compaction.Trigger(level, self.manifest); task != nil {
 			fmt.Println("compacting")
 			self.compaction.Compact(task, self.manifest)
@@ -134,18 +191,20 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 // 4. Read from level 1-3 (sorted)
 // Read the value from the given key. Will return error if value is not found.
 func (self *GoStore[K, V]) Read(key K) (V, error) {
-	self.mut.RLock()
-	defer self.mut.RUnlock()
 	if !self.bloom.Has(key) {
 		return SSTableEntry[K, V]{}.Value, errors.New("Not found")
 	}
+	self.mut.RLock()
+	defer self.mut.RUnlock()
+
 	// Read from memory
 	if val, ok := self.memTable.Get(key); ok {
 		return val, nil
 	} else {
-		level0_tbl := self.manifest[0]
+		level0_tbl := self.manifest.Levels[0]
 
 		// Check unsorted level 0
+		// TODO search newest files first
 		for _, tbl := range level0_tbl.Tables {
 			err := tbl.Open()
 			if err != nil {
@@ -160,7 +219,7 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 		}
 
 		// binary search sorted levels 1:3
-		for _, level := range self.manifest[1:] {
+		for _, level := range self.manifest.Levels[1:] {
 			if i, found := level.BinarySearch(key); found {
 				val, found := level.Tables[i].Search(key)
 				if found {
@@ -180,38 +239,6 @@ func (self *GoStore[K, V]) Delete(key K) error {
 		return nil
 	}
 	return errors.New("Key not found")
-}
-
-// For debugging/tests: Use instead of Close to remove created files and release resources
-func (self *GoStore[K, V]) Clean() error {
-	err := self.Close()
-	if err != nil {
-		return nil
-	}
-
-	for _, levelDir := range numberToPathMap {
-		segments, err := os.ReadDir(levelDir)
-		if err != nil {
-			return err
-		}
-		for _, segment := range segments {
-			if strings.HasSuffix(segment.Name(), ".segment") {
-				err = os.Remove(filepath.Join(levelDir, segment.Name()))
-				if err != nil {
-					return err
-				}
-			}
-		}
-	}
-	err = os.Remove(manifestPath)
-	if err != nil {
-		return err
-	}
-	err = os.Remove(bloomPath)
-	if err != nil {
-		return err
-	}
-	return os.Remove(walPath)
 }
 
 // Close closes all associated resources

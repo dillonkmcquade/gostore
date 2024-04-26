@@ -60,21 +60,19 @@ func insertAt[T any](slice []T, i int, val T) []T {
 	return slice
 }
 
-type Manifest[K cmp.Ordered, V any] [NUM_LEVELS]*Level[K, V]
+// type Manifest[K cmp.Ordered, V any] [NUM_LEVELS]*Level[K, V]
+
+type Manifest[K cmp.Ordered, V any] struct {
+	Levels [NUM_LEVELS]*Level[K, V]
+	Path   string
+}
 
 // Writes manifest to p. If p is nil, writes to manifestPath
-func (man *Manifest[K, V]) Persist(p *string) error {
-	assert(len(man) == NUM_LEVELS)
+func (man *Manifest[K, V]) Persist() error {
+	assert(len(man.Levels) == NUM_LEVELS)
 	assert(man != nil)
 
-	var path string
-	if p == nil {
-		path = manifestPath
-	} else {
-		path = *p
-	}
-
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0777)
+	file, err := os.OpenFile(man.Path, os.O_CREATE|os.O_RDWR, 0777)
 	if err != nil {
 		return err
 	}
@@ -87,29 +85,31 @@ func (man *Manifest[K, V]) Persist(p *string) error {
 		return err
 	}
 	encoder := json.NewEncoder(file)
-	return encoder.Encode(man)
+	return encoder.Encode(man.Levels)
 }
 
 type ManifestOpts struct {
-	path            string // Path to manifest
-	num_levels      int    // Number of compaction levels
-	level0_max_size int64  // Size of level 0
+	Path            string // Path to manifest
+	Num_levels      int    // Number of compaction levels
+	Level0_max_size int64  // Size of level 0 in mb
 }
 
 // Create new manifest
 func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], error) {
-	_, err := os.Stat(opts.path)
+	_, err := os.Stat(opts.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			manifest := &Manifest[K, V]{}
+			manifest := &Manifest[K, V]{
+				Path: opts.Path,
+			}
 
-			assert(len(manifest) == opts.num_levels)
+			assert(len(manifest.Levels) == opts.Num_levels)
 
-			level0_max_size := opts.level0_max_size * 1024 * 1024 // convert to bytes
+			level0_max_size := opts.Level0_max_size * 1024 * 1024 // convert to bytes
 
-			for levelNumber := 0; levelNumber < opts.num_levels; levelNumber++ {
+			for levelNumber := 0; levelNumber < opts.Num_levels; levelNumber++ {
 				multiplier := math.Pow(10, float64(levelNumber))
-				manifest[levelNumber] = &Level[K, V]{
+				manifest.Levels[levelNumber] = &Level[K, V]{
 					Number:  levelNumber,
 					Size:    0,
 					MaxSize: level0_max_size * int64(multiplier),
@@ -119,7 +119,7 @@ func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], err
 		}
 		return nil, err
 	}
-	return loadManifest[K, V](opts.path)
+	return loadManifest[K, V](opts.Path)
 }
 
 func loadManifest[K cmp.Ordered, V any](p string) (*Manifest[K, V], error) {
@@ -129,6 +129,6 @@ func loadManifest[K cmp.Ordered, V any](p string) (*Manifest[K, V], error) {
 	}
 	manifest := &Manifest[K, V]{}
 	decoder := json.NewDecoder(file)
-	err = decoder.Decode(manifest)
+	err = decoder.Decode(&manifest.Levels)
 	return manifest, err
 }

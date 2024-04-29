@@ -2,6 +2,8 @@ package lsm_tree
 
 import (
 	"cmp"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,6 +57,22 @@ func (c *CompactionImpl[K, V]) Trigger(level *Level[K, V]) bool {
 	return level.Size >= level.MaxSize
 }
 
+func generateRandomString(n int) (string, error) {
+	bytes := make([]byte, n)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func generateUniqueFilename(time time.Time) string {
+	uniqueString, err := generateRandomString(8)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%v_%v.segment", time.Unix(), uniqueString)
+}
+
 func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 	fmt.Println("Compaction")
 	allCompacted := true
@@ -87,7 +105,8 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 
 				// Write files and add to manifest
 				for _, splitTable := range split {
-					splitTable.Name = filepath.Join(c.LevelPaths[level.Number+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
+					splitTable.Name = filepath.Join(c.LevelPaths[level.Number+1], generateUniqueFilename(splitTable.CreatedOn))
+
 					fmt.Printf("Syncing to %v\n", splitTable.Name)
 					_, err := splitTable.Sync()
 					if err != nil {
@@ -97,6 +116,9 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 					manifest.Levels[level.Number+1].Add(splitTable)
 				}
 
+				for _, tbl := range level.Tables {
+					os.Remove(tbl.Name)
+				}
 				manifest.Levels[0].Tables = []*SSTable[K, V]{}
 				manifest.Levels[0].Size = 0
 			} else {
@@ -120,13 +142,17 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				}
 
 				merged := c.merge(append(overlaps, table)...)
+				fmt.Printf("Merging %v tables\n", len(level.Tables))
+				fmt.Printf("First: %v, Last %v, #entries: %v\n", merged.First, merged.Last, len(merged.Entries))
 
 				// Split merged table into smaller sizes
 				split := c.split(merged, c.LevelPaths[i+1])
+				fmt.Printf("Split tables: %v\n", len(split))
 
 				// Write files and add to manifest
 				for _, splitTable := range split {
 					splitTable.Name = filepath.Join(c.LevelPaths[i+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
+					fmt.Printf("Syncing to %v\n", splitTable.Name)
 					_, err := splitTable.Sync()
 					if err != nil {
 						panic(err)

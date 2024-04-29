@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestCompaction(t *testing.T) {
+func TestLevel0Compaction(t *testing.T) {
 	tmp := t.TempDir()
 
 	opts := NewTestLSMOpts(tmp)
@@ -96,7 +96,7 @@ func TestCompactionMerge(t *testing.T) {
 	t.Run("Test split", func(t *testing.T) {
 		merged.Open()
 		defer merged.Close()
-		splits := c.split(merged, c.LevelPaths[1])
+		splits := c.split(merged)
 		if len(splits) != 5 {
 			t.Errorf("Number of output tables should be 5, got %v", len(splits))
 		}
@@ -107,7 +107,7 @@ func TestCompactionMerge(t *testing.T) {
 			}
 		}
 
-		splits2 := c.split(level.Tables[1], c.LevelPaths[1])
+		splits2 := c.split(level.Tables[1])
 		if len(splits2) != 3 {
 			t.Errorf("Number of output tables should be 3, got %v", len(splits))
 		}

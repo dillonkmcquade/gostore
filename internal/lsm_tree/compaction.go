@@ -35,7 +35,7 @@ import (
 //		- Least overlapping parent
 //		- Least overlapping grandparent
 //		- Coldest
-//		- Oldest
+//		- Oldest <-
 //		- Tombstone density
 //		- Tombstone-TTL
 
@@ -65,7 +65,7 @@ func generateRandomString(n int) (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func generateUniqueFilename(time time.Time) string {
+func generateUniqueSegmentName(time time.Time) string {
 	uniqueString, err := generateRandomString(8)
 	if err != nil {
 		panic(err)
@@ -99,28 +99,34 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				fmt.Printf("First: %v, Last %v, #entries: %v\n", merged.First, merged.Last, len(merged.Entries))
 
 				// Split
-				split := c.split(merged, c.LevelPaths[1])
+				split := c.split(merged)
 
 				fmt.Printf("Split tables: %v\n", len(split))
 
 				// Write files and add to manifest
 				for _, splitTable := range split {
-					splitTable.Name = filepath.Join(c.LevelPaths[level.Number+1], generateUniqueFilename(splitTable.CreatedOn))
+					go func(tbl *SSTable[K, V], level *Level[K, V]) {
+						tbl.Name = filepath.Join(c.LevelPaths[1], generateUniqueSegmentName(tbl.CreatedOn))
 
-					fmt.Printf("Syncing to %v\n", splitTable.Name)
-					_, err := splitTable.Sync()
-					if err != nil {
-						fmt.Println("Panic")
-						panic(err)
-					}
-					manifest.Levels[level.Number+1].Add(splitTable)
+						fmt.Printf("Syncing to %v\n", tbl.Name)
+						_, err := tbl.Sync()
+						if err != nil {
+							panic(err)
+						}
+						manifest.mut.Lock()
+						manifest.Levels[level.Number+1].Add(tbl)
+						manifest.mut.Unlock()
+					}(splitTable, level)
 				}
 
 				for _, tbl := range level.Tables {
-					os.Remove(tbl.Name)
+					go func(name string) { os.Remove(name) }(tbl.Name)
 				}
+
+				manifest.mut.Lock()
 				manifest.Levels[0].Tables = []*SSTable[K, V]{}
 				manifest.Levels[0].Size = 0
+				manifest.mut.Unlock()
 			} else {
 				fmt.Println("Level 1+ compaction")
 				// Choose oldest table
@@ -136,8 +142,10 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 					table.Name = newLocation
 
 					// Update manifest
+					manifest.mut.Lock()
 					manifest.Levels[i+1].Add(table)
 					manifest.Levels[i].Remove(table)
+					manifest.mut.Unlock()
 					return
 				}
 
@@ -146,9 +154,10 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				fmt.Printf("First: %v, Last %v, #entries: %v\n", merged.First, merged.Last, len(merged.Entries))
 
 				// Split merged table into smaller sizes
-				split := c.split(merged, c.LevelPaths[i+1])
+				split := c.split(merged)
 				fmt.Printf("Split tables: %v\n", len(split))
 
+				manifest.mut.Lock()
 				// Write files and add to manifest
 				for _, splitTable := range split {
 					splitTable.Name = filepath.Join(c.LevelPaths[i+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
@@ -164,6 +173,7 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				for _, lap := range overlaps {
 					manifest.Levels[i+1].Remove(lap)
 				}
+				manifest.mut.Unlock()
 
 				// Cleanup table from upper level
 				level.Remove(table)
@@ -187,7 +197,7 @@ func findOldestTable[K cmp.Ordered, V any](tables []*SSTable[K, V]) *SSTable[K, 
 	return oldest
 }
 
-func (c *CompactionImpl[K, V]) split(table *SSTable[K, V], destDir string) []*SSTable[K, V] {
+func (c *CompactionImpl[K, V]) split(table *SSTable[K, V]) []*SSTable[K, V] {
 	assert(len(table.Entries) > c.SSTable_max_size)
 
 	var tables []*SSTable[K, V]
@@ -204,7 +214,6 @@ func (c *CompactionImpl[K, V]) split(table *SSTable[K, V], destDir string) []*SS
 
 		timestamp := time.Now()
 		tbl := &SSTable[K, V]{
-			Name:      filepath.Join(destDir, fmt.Sprintf("%v.segment", timestamp.Unix())),
 			Entries:   table.Entries[i : lastIndex+1],
 			First:     table.Entries[i].Key,
 			Last:      table.Entries[lastIndex].Key,

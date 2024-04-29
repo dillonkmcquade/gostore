@@ -54,6 +54,9 @@ type MemTable[K cmp.Ordered, V any] interface {
 	ExceedsSize() bool
 	// Create snapshot of memtable as SSTable
 	Snapshot(string) *SSTable[K, V]
+
+	// Generate new empty memtable with the same options
+	Clone() MemTable[K, V]
 	// Clear points root to nil and makes size = 0
 	Clear()
 	// Closes active resources

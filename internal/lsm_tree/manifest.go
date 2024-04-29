@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"sync"
 )
 
 type Level[K cmp.Ordered, V any] struct {
@@ -65,6 +66,7 @@ func insertAt[T any](slice []T, i int, val T) []T {
 type Manifest[K cmp.Ordered, V any] struct {
 	Levels []*Level[K, V]
 	Path   string
+	mut    sync.Mutex
 }
 
 // Writes manifest to p. If p is nil, writes to manifestPath

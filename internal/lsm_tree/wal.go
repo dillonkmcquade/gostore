@@ -19,6 +19,14 @@ type WAL[K cmp.Ordered, V any] struct {
 	encoder *gob.Encoder
 }
 
+func generateUniqueWALName() string {
+	uniqueString, err := generateRandomString(8)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("WAL_%v.dat", uniqueString)
+}
+
 // Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
 func newWal[K cmp.Ordered, V any](filename string) (*WAL[K, V], error) {
 	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0777)

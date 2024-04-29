@@ -24,6 +24,7 @@ type GoStore[K cmp.Ordered, V any] struct {
 	// Verify if the key exists in the DB quickly
 	bloom *BloomFilter[K]
 
+	// Paths to the level directories. Each index corresponds to a level.
 	levelPaths []string
 
 	mut sync.RWMutex
@@ -67,7 +68,7 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 			numHashFuncs: 7,
 		},
 		MemTableOpts: &GoStoreMemTableOpts{
-			walPath:  filepath.Join(gostorepath, "wal.dat"),
+			walPath:  filepath.Join(gostorepath, generateUniqueWALName()),
 			Max_size: 20000,
 		},
 		ManifestOpts: &ManifestOpts{
@@ -115,7 +116,7 @@ func NewTestLSMOpts(gostorepath string) *LSMOpts {
 			numHashFuncs: 1,
 		},
 		MemTableOpts: &GoStoreMemTableOpts{
-			walPath:  filepath.Join(gostorepath, "wal.dat"),
+			walPath:  filepath.Join(gostorepath, generateUniqueWALName()),
 			Max_size: 1000,
 		},
 		ManifestOpts: &ManifestOpts{
@@ -142,7 +143,7 @@ func createAppFiles(opts *LSMOpts) {
 	}
 }
 
-// Creates a new LSMTree. Creates ~/.gostore if it does not exist.
+// Creates a new LSMTree. Creates application directory if it does not exist.
 //
 // ***Will exit with non-zero status if error is returned during any of the initialization steps.
 func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
@@ -195,6 +196,7 @@ func (self *GoStore[K, V]) flush() {
 	if err != nil {
 		panic("panic on snapshot Sync")
 	}
+
 	// Discard memTable & write-ahead log
 	self.memTable.Clear()
 	self.mut.Unlock()
@@ -207,14 +209,13 @@ func (self *GoStore[K, V]) flush() {
 	// }
 
 	// COMPACTION
-	self.compaction.Compact(self.manifest)
+	go self.compaction.Compact(self.manifest)
 }
 
 // Write the Key-Value pair to the memtable
 func (self *GoStore[K, V]) Write(key K, val V) error {
-	self.mut.Lock()
-
 	// Write to memTable
+	self.mut.Lock()
 	self.memTable.Put(key, val)
 	self.bloom.Add(key)
 	if self.memTable.ExceedsSize() {

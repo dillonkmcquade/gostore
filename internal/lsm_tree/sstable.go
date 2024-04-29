@@ -23,6 +23,7 @@ type SSTable[K cmp.Ordered, V any] struct {
 	Name      string    // full filename
 	First     K         // First key in range
 	Last      K         // Last key in range
+	Size      int64     // Size of file in bytes
 	CreatedOn time.Time // Timestamp
 
 	mut sync.Mutex
@@ -51,23 +52,17 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 	}
 	table.Entries = []*SSTableEntry[K, V]{}
 	table.file = file
-	return table.Size()
-}
 
-// Returns the file size in bytes
-func (table *SSTable[K, V]) Size() (int64, error) {
-	if table.file != nil {
-		fd, err := table.file.Stat()
-		if err != nil {
-			return 0, err
-		}
-		return fd.Size(), nil
-	}
-	fd, err := os.Stat(table.Name)
+	fd, err := file.Stat()
 	if err != nil {
 		return 0, err
 	}
-	return fd.Size(), nil
+
+	size := fd.Size()
+
+	table.Size = size
+
+	return size, nil
 }
 
 // Read entries into memory & locks table

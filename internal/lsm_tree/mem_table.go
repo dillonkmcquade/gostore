@@ -111,7 +111,7 @@ func (tbl *GostoreMemTable[K, V]) Snapshot(destDir string) *SSTable[K, V] {
 
 type GoStoreMemTableOpts struct {
 	walPath  string // Path to desired WAL location
-	max_size uint   // Max size before triggering flush
+	Max_size uint   // Max size before triggering flush
 }
 
 func NewGostoreMemTable[K cmp.Ordered, V any](opts *GoStoreMemTableOpts) (*GostoreMemTable[K, V], error) {
@@ -119,7 +119,7 @@ func NewGostoreMemTable[K cmp.Ordered, V any](opts *GoStoreMemTableOpts) (*Gosto
 	if err != nil {
 		return nil, err
 	}
-	memtable := &GostoreMemTable[K, V]{rbt: &RedBlackTree[K, V]{}, max_size: opts.max_size, wal: wal}
+	memtable := &GostoreMemTable[K, V]{rbt: &RedBlackTree[K, V]{}, max_size: opts.Max_size, wal: wal}
 	err = memtable.Replay(opts.walPath)
 	return memtable, err
 }

@@ -11,7 +11,7 @@ func TestNewMemTable(t *testing.T) {
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
 		walPath:  wal,
-		max_size: 50,
+		Max_size: 50,
 	})
 	if err != nil {
 		t.Error(err)
@@ -25,7 +25,7 @@ func TestMemTableCRUD(t *testing.T) {
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
 		walPath:  wal,
-		max_size: 2000,
+		Max_size: 2000,
 	})
 	if err != nil {
 		t.Error(err)
@@ -105,7 +105,7 @@ func TestMemTableIO(t *testing.T) {
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
 		walPath:  wal,
-		max_size: 2000,
+		Max_size: 2000,
 	})
 	defer mem.Close()
 
@@ -123,7 +123,7 @@ func TestMemTableIO(t *testing.T) {
 	t.Run("Test Replay", func(t *testing.T) {
 		mem2, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
 			walPath:  wal,
-			max_size: 2000,
+			Max_size: 2000,
 		})
 		if err != nil {
 			t.Error(err)

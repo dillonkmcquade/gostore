@@ -39,7 +39,7 @@ func TestLSMRead(t *testing.T) {
 func TestLSMFlush(t *testing.T) {
 	tmp := t.TempDir()
 	opts := NewTestLSMOpts(tmp)
-	opts.MemTableOpts.max_size = 5
+	opts.MemTableOpts.Max_size = 5
 	tree := New[int64, any](opts)
 	defer tree.Close()
 

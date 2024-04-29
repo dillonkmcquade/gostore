@@ -25,25 +25,25 @@ func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
 	return -1, false
 }
 
-func (l *Level[K, V]) Add(table *SSTable[K, V], size int64) {
+func (l *Level[K, V]) Add(table *SSTable[K, V]) {
 	if len(l.Tables) == 0 {
 		l.Tables = append(l.Tables, table)
-		l.Size += size
+		l.Size += table.Size
 		return
 	}
 	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= table.First && l.Tables[i].Last <= table.Last })
 	l.Tables = insertAt(l.Tables, index, table)
-	l.Size += size
+	l.Size += table.Size
 }
 
-func (l *Level[K, V]) Remove(table *SSTable[K, V], size int64) {
+func (l *Level[K, V]) Remove(table *SSTable[K, V]) {
 	assert(len(l.Tables) > 0)
 
 	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= table.First && l.Tables[i].Last <= table.Last })
 	assert(index < len(l.Tables))
 	if index < len(l.Tables) && l.Tables[index] == table {
 		l.Tables = remove(l.Tables, index)
-		l.Size -= size
+		l.Size -= table.Size
 	}
 }
 
@@ -63,7 +63,7 @@ func insertAt[T any](slice []T, i int, val T) []T {
 // type Manifest[K cmp.Ordered, V any] [NUM_LEVELS]*Level[K, V]
 
 type Manifest[K cmp.Ordered, V any] struct {
-	Levels [NUM_LEVELS]*Level[K, V]
+	Levels []*Level[K, V]
 	Path   string
 }
 
@@ -91,7 +91,7 @@ func (man *Manifest[K, V]) Persist() error {
 type ManifestOpts struct {
 	Path            string // Path to manifest
 	Num_levels      int    // Number of compaction levels
-	Level0_max_size int64  // Size of level 0 in mb
+	Level0_max_size int64  // Max size of level 0 in bytes
 }
 
 // Create new manifest
@@ -100,19 +100,18 @@ func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], err
 	if err != nil {
 		if os.IsNotExist(err) {
 			manifest := &Manifest[K, V]{
-				Path: opts.Path,
+				Path:   opts.Path,
+				Levels: make([]*Level[K, V], opts.Num_levels),
 			}
 
 			assert(len(manifest.Levels) == opts.Num_levels)
-
-			level0_max_size := opts.Level0_max_size * 1024 * 1024 // convert to bytes
 
 			for levelNumber := 0; levelNumber < opts.Num_levels; levelNumber++ {
 				multiplier := math.Pow(10, float64(levelNumber))
 				manifest.Levels[levelNumber] = &Level[K, V]{
 					Number:  levelNumber,
 					Size:    0,
-					MaxSize: level0_max_size * int64(multiplier),
+					MaxSize: opts.Level0_max_size * int64(multiplier),
 				}
 			}
 			return manifest, nil

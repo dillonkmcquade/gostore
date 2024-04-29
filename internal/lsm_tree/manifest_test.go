@@ -90,7 +90,7 @@ func TestLevelAdd(t *testing.T) {
 			First:     int64(i),
 			Last:      int64(i - 9),
 			CreatedOn: time.Now(),
-		}, 10)
+		})
 	}
 
 	for i := 0; i < len(level.Tables)-1; i++ {
@@ -101,9 +101,6 @@ func TestLevelAdd(t *testing.T) {
 
 	if len(level.Tables) != 10 {
 		t.Error("Should be 10")
-	}
-	if level.Size != 200 {
-		t.Error("Should be 200")
 	}
 }
 
@@ -116,15 +113,17 @@ func TestLevelRemove(t *testing.T) {
 	t1 := &SSTable[int64, string]{
 		First: 0,
 		Last:  10,
+		Size:  10,
 	}
 
 	t2 := &SSTable[int64, string]{
 		First: 11,
 		Last:  20,
+		Size:  10,
 	}
 
-	level.Add(t1, 10)
-	level.Add(t2, 10)
+	level.Add(t1)
+	level.Add(t2)
 
 	if level.Size != 20 {
 		t.Error("Should be 20")
@@ -134,7 +133,7 @@ func TestLevelRemove(t *testing.T) {
 		t.Error("Length should be 2")
 	}
 
-	level.Remove(t1, 10)
+	level.Remove(t1)
 
 	if len(level.Tables) != 1 {
 		t.Error("Length should be 1")
@@ -142,7 +141,7 @@ func TestLevelRemove(t *testing.T) {
 	if level.Size != 10 {
 		t.Error("Size should be 10")
 	}
-	level.Remove(t2, 10)
+	level.Remove(t2)
 	if len(level.Tables) != 0 {
 		t.Error("Length should be 0")
 	}

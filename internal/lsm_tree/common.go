@@ -52,7 +52,7 @@ type MemTable[K cmp.Ordered, V any] interface {
 	Size() uint
 	// Should memtable be flushed
 	ExceedsSize() bool
-	// Reads memtable entries into SSTable
+	// Create snapshot of memtable as SSTable
 	Snapshot(string) *SSTable[K, V]
 	// Clear points root to nil and makes size = 0
 	Clear()
@@ -61,9 +61,9 @@ type MemTable[K cmp.Ordered, V any] interface {
 }
 
 type CompactionController[K cmp.Ordered, V any] interface {
-	Compact(*CompactionTask[K, V], *Manifest[K, V]) error
+	Compact(*Manifest[K, V])
 	// GenerateCompactionTask(Manifest[K, V]) *CompactionTask[K, V]
-	Trigger(int, *Manifest[K, V]) *CompactionTask[K, V]
+	Trigger(*Level[K, V]) bool
 }
 
 // Creates directory if it does not exist.

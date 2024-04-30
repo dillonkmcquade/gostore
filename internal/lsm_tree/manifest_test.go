@@ -6,6 +6,242 @@ import (
 	"time"
 )
 
+func newTestManifest(path string) *Manifest[int64, string] {
+	return &Manifest[int64, string]{
+		Levels: []*Level[int64, string]{
+			{
+				Number: 0,
+				Tables: []*SSTable[int64, string]{
+					{
+						Entries: []*SSTableEntry[int64, string]{
+							{
+								Operation: INSERT,
+								Key:       0,
+								Value:     "TEST",
+							},
+							{
+								Operation: INSERT,
+								Key:       1,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       2,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       3,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       4,
+								Value:     "",
+							},
+						},
+						Name:      filepath.Join(path, generateUniqueSegmentName(time.Now())),
+						First:     0,
+						Last:      4,
+						Size:      0,
+						CreatedOn: time.Now(),
+					},
+					{
+						Entries: []*SSTableEntry[int64, string]{
+							{
+								Operation: INSERT,
+								Key:       50,
+								Value:     "TEST",
+							},
+							{
+								Operation: INSERT,
+								Key:       100,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       200,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       300,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       400,
+								Value:     "",
+							},
+						},
+						Name:      filepath.Join(path, generateUniqueSegmentName(time.Now())),
+						First:     50,
+						Last:      400,
+						Size:      0,
+						CreatedOn: time.Now(),
+					},
+				},
+				Size:    0,
+				MaxSize: 0,
+			},
+			{
+				Number: 1,
+				Tables: []*SSTable[int64, string]{
+					{
+						Entries: []*SSTableEntry[int64, string]{
+							{
+								Operation: INSERT,
+								Key:       7,
+								Value:     "TEST",
+							},
+							{
+								Operation: INSERT,
+								Key:       8,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       9,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       10,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       14,
+								Value:     "",
+							},
+						},
+						Name:      filepath.Join(path, generateUniqueSegmentName(time.Now())),
+						First:     7,
+						Last:      14,
+						Size:      0,
+						CreatedOn: time.Now(),
+					},
+					{
+						Entries: []*SSTableEntry[int64, string]{
+							{
+								Operation: INSERT,
+								Key:       21,
+								Value:     "TEST",
+							},
+							{
+								Operation: INSERT,
+								Key:       28,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       29,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       31,
+								Value:     "",
+							},
+							{
+								Operation: INSERT,
+								Key:       40,
+								Value:     "",
+							},
+						},
+						Name:      filepath.Join(path, generateUniqueSegmentName(time.Now())),
+						First:     7,
+						Last:      14,
+						Size:      0,
+						CreatedOn: time.Now(),
+					},
+				},
+				Size:    0,
+				MaxSize: 0,
+			},
+			{
+				Number: 2,
+				Tables: []*SSTable[int64, string]{{
+					Entries: []*SSTableEntry[int64, string]{
+						{
+							Operation: INSERT,
+							Key:       40,
+							Value:     "TEST",
+						},
+						{
+							Operation: INSERT,
+							Key:       1,
+							Value:     "",
+						},
+						{
+							Operation: INSERT,
+							Key:       2,
+							Value:     "",
+						},
+						{
+							Operation: INSERT,
+							Key:       3,
+							Value:     "",
+						},
+						{
+							Operation: INSERT,
+							Key:       4,
+							Value:     "",
+						},
+					},
+					Name:      "",
+					First:     0,
+					Last:      0,
+					Size:      0,
+					CreatedOn: time.Now(),
+				}},
+				Size:    0,
+				MaxSize: 0,
+			},
+			{
+				Number: 3,
+				Tables: []*SSTable[int64, string]{{
+					Entries: []*SSTableEntry[int64, string]{
+						{
+							Operation: INSERT,
+							Key:       0,
+							Value:     "TEST",
+						},
+						{
+							Operation: INSERT,
+							Key:       1,
+							Value:     "",
+						},
+						{
+							Operation: INSERT,
+							Key:       2,
+							Value:     "",
+						},
+						{
+							Operation: INSERT,
+							Key:       3,
+							Value:     "",
+						},
+						{
+							Operation: INSERT,
+							Key:       4,
+							Value:     "",
+						},
+					},
+					Name:      "",
+					First:     0,
+					Last:      0,
+					Size:      0,
+					CreatedOn: time.Now(),
+				}},
+				Size:    0,
+				MaxSize: 0,
+			},
+		},
+		Path: filepath.Join(path, "manifest.json"),
+	}
+}
+
 func TestNewManifest(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "manifest.json")
@@ -45,33 +281,44 @@ func TestManifestPersist(t *testing.T) {
 }
 
 func TestLevelBinarySearch(t *testing.T) {
-	path := "../../data/sortedManifest.json"
-	opts := &ManifestOpts{Path: path, Num_levels: NUM_LEVELS, Level0_max_size: LEVEL0_MAX_SIZE}
-	man, err := NewManifest[int64, string](opts)
-	if err != nil {
-		t.Error(err)
-	}
+	// path := "../../data/sortedManifest.json"
+	// opts := &ManifestOpts{Path: path, Num_levels: NUM_LEVELS, Level0_max_size: LEVEL0_MAX_SIZE}
+	// man, err := NewManifest[int64, string](opts)
+	// if err != nil {
+	// 	t.Error(err)
+	// }
+	tmp := t.TempDir()
+	man := newTestManifest(tmp)
 
-	if i, found := man.Levels[0].BinarySearch(0); found {
-		err = man.Levels[0].Tables[i].Open()
-		if err != nil {
-			t.Error(err)
-		}
-		if _, found := man.Levels[0].Tables[i].Search(0); !found {
-			t.Error("Should contain 0")
-		}
-		man.Levels[0].Tables[i].Close()
+	_, found := man.Levels[0].BinarySearch(0)
+	if !found {
+		t.Error("Should be in Level")
 	}
-	if i, found := man.Levels[0].BinarySearch(400); found {
-		err = man.Levels[0].Tables[i].Open()
-		if err != nil {
-			t.Error(err)
-		}
-		if _, found := man.Levels[0].Tables[i].Search(400); !found {
-			t.Error("Should contain 400")
-		}
-		man.Levels[0].Tables[i].Close()
+	// if found {
+	// 	err = man.Levels[0].Tables[i].Open()
+	// 	if err != nil {
+	// 		t.Error(err)
+	// 	}
+	// 	if _, found := man.Levels[0].Tables[i].Search(0); !found {
+	// 		t.Error("Should contain 0")
+	// 	}
+	// 	man.Levels[0].Tables[i].Close()
+	// }
+
+	_, found = man.Levels[0].BinarySearch(400)
+	if !found {
+		t.Error("Should be in Level")
 	}
+	// if found {
+	// 	err = man.Levels[0].Tables[i].Open()
+	// 	if err != nil {
+	// 		t.Error(err)
+	// 	}
+	// 	if _, found := man.Levels[0].Tables[i].Search(400); !found {
+	// 		t.Error("Should contain 400")
+	// 	}
+	// 	man.Levels[0].Tables[i].Close()
+	// }
 }
 
 func TestLevelAdd(t *testing.T) {

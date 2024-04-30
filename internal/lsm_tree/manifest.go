@@ -21,12 +21,20 @@ type Level[K cmp.Ordered, V any] struct {
 
 // Binary search the current level for table that has range overlapping key
 func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
-	l.mut.Lock()
-	defer l.mut.Unlock()
-	// find index of table that COULD contain key
-	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= key && l.Tables[i].Last >= key })
-	if index >= 0 && index < len(l.Tables) {
-		return index, true
+	low := 0
+	high := len(l.Tables) - 1
+
+	for low <= high {
+		mid := low + (high-low)/2
+		if l.Tables[mid].First <= key && key <= l.Tables[mid].Last {
+			return mid, true
+		}
+
+		if key < l.Tables[mid].First {
+			high = mid - 1
+		} else {
+			low = mid + 1
+		}
 	}
 	return -1, false
 }
@@ -40,7 +48,7 @@ func (l *Level[K, V]) Add(table *SSTable[K, V]) {
 		l.Size += table.Size
 		return
 	}
-	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= table.First && l.Tables[i].Last <= table.Last })
+	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First >= table.First && l.Tables[i].Last >= table.Last })
 	l.Tables = insertAt(l.Tables, index, table)
 	l.Size += table.Size
 }
@@ -51,12 +59,20 @@ func (l *Level[K, V]) Remove(table *SSTable[K, V]) {
 	defer l.mut.Unlock()
 	assert(len(l.Tables) > 0)
 
-	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= table.First && l.Tables[i].Last <= table.Last })
+	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First >= table.First && l.Tables[i].Last >= table.Last })
 	assert(index < len(l.Tables))
 	if index < len(l.Tables) && l.Tables[index] == table {
 		l.Tables = remove(l.Tables, index)
 		l.Size -= table.Size
 	}
+}
+
+// Assigns an empty array to Tables and sets size to 0
+func (l *Level[K, V]) Clear() {
+	l.mut.Lock()
+	l.Tables = []*SSTable[K, V]{}
+	l.Size = 0
+	l.mut.Unlock()
 }
 
 func remove[T any](slice []T, i int) []T {

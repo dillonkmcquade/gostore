@@ -2,7 +2,6 @@ package lsm_tree
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,26 +11,87 @@ func TestLevel0Compaction(t *testing.T) {
 	tmp := t.TempDir()
 
 	opts := NewTestLSMOpts(tmp)
-	tree := New[int64, []byte](opts)
+	tree := New[int64, string](opts)
 
 	defer tree.Close()
 
-	for i := 0; i < 1050; i++ {
-		tree.Write(int64(i), []byte("TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST"))
-	}
-
-	time.Sleep(3 * time.Second)
-	for i, path := range opts.LevelPaths {
-		segments, err := os.ReadDir(path)
+	for i := 0; i < 10000; i++ {
+		err := tree.Write(int64(i), "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")
 		if err != nil {
 			t.Error(err)
 		}
-		for _, segment := range segments {
-			fd, _ := segment.Info()
-			size := fd.Size()
-			fmt.Printf("Level %v : %v -- %v bytes\n", i, segment.Name(), size)
-		}
 	}
+
+	t.Run("Read from compacted tree", func(t *testing.T) {
+		val, err := tree.Read(1999)
+		if err != nil {
+			t.Errorf("Reading %v: %v", 1999, err)
+			t.FailNow()
+		}
+		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+			t.Error("Should be TESTVALUE")
+		}
+	})
+	t.Run("Read from compacted tree", func(t *testing.T) {
+		val, err := tree.Read(0)
+		if err != nil {
+			t.Errorf("Reading %v: %v", 0, err)
+			t.FailNow()
+		}
+		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+			t.Error("Should be TESTVALUE")
+		}
+	})
+	t.Run("Read from compacted tree", func(t *testing.T) {
+		val, err := tree.Read(2000)
+		if err != nil {
+			t.Errorf("Reading %v: %v", 2000, err)
+			t.FailNow()
+		}
+		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+			t.Error("Should be TESTVALUE")
+		}
+	})
+	t.Run("Read from compacted tree", func(t *testing.T) {
+		val, err := tree.Read(3000)
+		if err != nil {
+			t.Errorf("Reading %v: %v", 3000, err)
+			t.FailNow()
+		}
+		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+			t.Error("Should be TESTVALUE")
+		}
+	})
+	t.Run("Read from compacted tree", func(t *testing.T) {
+		val, err := tree.Read(8000)
+		if err != nil {
+			t.Errorf("Reading %v: %v", 8000, err)
+			t.FailNow()
+		}
+		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+			t.Error("Should be TESTVALUE")
+		}
+	})
+	t.Run("Read from compacted tree", func(t *testing.T) {
+		val, err := tree.Read(1111)
+		if err != nil {
+			t.Errorf("Reading %v: %v", 1111, err)
+			t.FailNow()
+		}
+		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+			t.Error("Should be TESTVALUE")
+		}
+	})
+	t.Run("Read from compacted tree", func(t *testing.T) {
+		val, err := tree.Read(8888)
+		if err != nil {
+			t.Errorf("Reading %v: %v", 8888, err)
+			t.FailNow()
+		}
+		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+			t.Error("Should be TESTVALUE")
+		}
+	})
 }
 
 func newTestLevel() *Level[int, string] {

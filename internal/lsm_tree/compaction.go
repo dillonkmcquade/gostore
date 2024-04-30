@@ -41,14 +41,6 @@ import (
 //		- Tombstone density
 //		- Tombstone-TTL
 
-// type CompactionTask[K cmp.Ordered, V any] struct {
-// 	upperLevel              *int             // if upper level is nil, is level0 compaction
-// 	upperLevelIDs           []*SSTable[K, V] // filenames of SSTables in upper level
-// 	lowerLevel              int
-// 	lowerLevelIDs           []*SSTable[K, V] // filenames of SSTables in lower level
-// 	isLowerLevelBottomLevel bool
-// }
-
 type CompactionImpl[K cmp.Ordered, V any] struct {
 	LevelPaths       []string
 	SSTable_max_size int
@@ -91,7 +83,7 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 	for i, level := range manifest.Levels {
 		if c.Trigger(level) {
 			// level0 compaction -> Skip finding overlaps
-			slog.Info("Compaction", "level", level.Number)
+			slog.Debug("Compaction", "level", level.Number)
 			if level.Number == 0 {
 				// Merge all tables
 				merged := c.merge(level.Tables...)
@@ -107,12 +99,12 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 					go func(tbl *SSTable[K, V]) {
 						tbl.Name = filepath.Join(c.LevelPaths[1], generateUniqueSegmentName(tbl.CreatedOn))
 
-						slog.Info("Sync", "filename", tbl.Name)
+						slog.Debug("Sync", "filename", tbl.Name)
 						_, err := tbl.Sync()
 						if err != nil {
 							panic(err)
 						}
-						manifest.Levels[level.Number+1].Add(tbl)
+						manifest.Levels[1].Add(tbl)
 						wg.Done()
 					}(splitTable)
 				}
@@ -120,15 +112,14 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				for _, tbl := range level.Tables {
 					wg.Add(1)
 					go func(name string) {
-						slog.Info("Remove", "filename", name)
+						slog.Debug("Remove", "filename", name)
 						os.Remove(name)
 						wg.Done()
 					}(tbl.Name)
 				}
 				wg.Wait()
 
-				manifest.Levels[0].Tables = []*SSTable[K, V]{}
-				manifest.Levels[0].Size = 0
+				defer level.Clear()
 			} else {
 				// Choose oldest table
 				table := findOldestTable(level.Tables)
@@ -141,7 +132,7 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 
 					os.Rename(table.Name, newLocation)
 
-					slog.Info("File modification", "type", "rename", "old", table.Name, "new", newLocation)
+					slog.Debug("File modification", "type", "rename", "old", table.Name, "new", newLocation)
 
 					table.Name = newLocation
 
@@ -159,7 +150,7 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				// Write files and add to manifest
 				for _, splitTable := range split {
 					splitTable.Name = filepath.Join(c.LevelPaths[i+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
-					slog.Info("Sync", "level", level.Number+1, "filename", splitTable.Name)
+					slog.Debug("Sync", "level", level.Number+1, "filename", splitTable.Name)
 					_, err := splitTable.Sync()
 					if err != nil {
 						panic(err)
@@ -168,8 +159,8 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				}
 
 				// Cleanup tables from lowerlevel
-				for _, lap := range overlaps {
-					manifest.Levels[i+1].Remove(lap)
+				for _, overlapping_table := range overlaps {
+					manifest.Levels[i+1].Remove(overlapping_table)
 				}
 
 				// Cleanup table from upper level
@@ -231,6 +222,7 @@ func (c *CompactionImpl[K, V]) merge(tables ...*SSTable[K, V]) *SSTable[K, V] {
 	for _, table := range tables {
 		if len(table.Entries) == 0 {
 			err := table.Open() // We dont close because we arent keeping this table
+			defer table.Close()
 			if err != nil {
 				panic(err)
 			}
@@ -272,43 +264,3 @@ func (c *CompactionImpl[K, V]) findOverlappingSSTables(upper_table *SSTable[K, V
 	}
 	return overlaps
 }
-
-// func (c *CompactionImpl[K, V]) generateCompactionTask(level int, manifest *Manifest[K, V]) []*CompactionTask[K, V] {
-// 	tasks := []*CompactionTask[K, V]{}
-// 	if level == 0 { // Compact all upperlevel tables
-// 		task := &CompactionTask[K, V]{
-// 			upperLevel:              nil,
-// 			upperLevelIDs:           manifest.Levels[level].Tables,
-// 			lowerLevel:              level + 1,
-// 			lowerLevelIDs:           make([]*SSTable[K, V], 0),
-// 			isLowerLevelBottomLevel: (level + 1) == 3,
-// 		}
-// 		for _, table := range manifest.Levels[level].Tables {
-// 			for _, lowerLevelTable := range manifest.Levels[level+1].Tables {
-// 				if table.Overlaps(lowerLevelTable) {
-// 					task.lowerLevelIDs = append(task.lowerLevelIDs, lowerLevelTable)
-// 				}
-// 			}
-// 		}
-// 		return tasks
-// 	}
-//
-// 	// Choose upperlevel tables that overlap lower  level tables
-// 	task := &CompactionTask[K, V]{
-// 		upperLevel:              &level,
-// 		upperLevelIDs:           make([]*SSTable[K, V], 0),
-// 		lowerLevel:              level + 1,
-// 		lowerLevelIDs:           make([]*SSTable[K, V], 0),
-// 		isLowerLevelBottomLevel: (level + 1) == 3,
-// 	}
-// 	for _, table := range manifest.Levels[level].Tables {
-// 		for _, lowerLevelTable := range manifest.Levels[level+1].Tables {
-// 			if table.Overlaps(lowerLevelTable) {
-// 				task.lowerLevelIDs = append(task.lowerLevelIDs, lowerLevelTable)
-// 				task.upperLevelIDs = append(task.upperLevelIDs, table)
-// 			}
-// 		}
-// 	}
-//
-// 	return task
-// }

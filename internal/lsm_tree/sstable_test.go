@@ -43,18 +43,12 @@ func TestSSTableIO(t *testing.T) {
 	t.Run("Sync", func(t *testing.T) {
 		tmp := t.TempDir()
 		filename := filepath.Join(tmp, "synctest")
-		entries := []*SSTableEntry[int64, string]{
-			{
-				Operation: INSERT,
-				Key:       0,
-				Value:     "TESTVALUE",
-			},
-		}
+		entries := testEntries()
 		t1 := &SSTable[int64, string]{
 			Entries:   entries,
 			Name:      filename,
 			First:     0,
-			Last:      9,
+			Last:      100,
 			CreatedOn: time.Now(),
 		}
 		size, err := t1.Sync()
@@ -74,18 +68,12 @@ func TestSSTableIO(t *testing.T) {
 	t.Run("Open/Close", func(t *testing.T) {
 		tmp := t.TempDir()
 		filename := filepath.Join(tmp, "loadtest")
-		entries := []*SSTableEntry[int64, string]{
-			{
-				Operation: INSERT,
-				Key:       0,
-				Value:     "TESTVALUE",
-			},
-		}
+		entries := testEntries()
 		t1 := &SSTable[int64, string]{
 			Entries:   entries,
 			Name:      filename,
 			First:     0,
-			Last:      9,
+			Last:      100,
 			CreatedOn: time.Now(),
 		}
 		_, err := t1.Sync()
@@ -94,10 +82,27 @@ func TestSSTableIO(t *testing.T) {
 		}
 
 		err = t1.Open()
-		defer t1.Close()
 		if err != nil {
 			t.Error(err)
 		}
+		defer t1.Close()
+
+		val, found := t1.Search(0)
+		if !found {
+			t.Error("Failed to search after opening table")
+		}
+		if val != "TESTVALUE0" {
+			t.Error("value should be TESTVALUE0")
+		}
+
+		val, found = t1.Search(5)
+		if !found {
+			t.Error("Failed to search after opening table")
+		}
+		if val != "TESTVALUE5" {
+			t.Error("value should be TESTVALUE0")
+		}
+
 		if len(t1.Entries) != len(entries) {
 			t.Error("Entries should not be empty")
 		}
@@ -107,33 +112,7 @@ func TestSSTableIO(t *testing.T) {
 func TestSSTableSearch(t *testing.T) {
 	tmp := t.TempDir()
 	filename := filepath.Join(tmp, "loadtest")
-	entries := []*SSTableEntry[int64, string]{
-		{
-			Operation: INSERT,
-			Key:       0,
-			Value:     "TESTVALUE0",
-		},
-		{
-			Operation: INSERT,
-			Key:       1,
-			Value:     "TESTVALUE1",
-		},
-		{
-			Operation: INSERT,
-			Key:       3,
-			Value:     "TESTVALUE3",
-		},
-		{
-			Operation: INSERT,
-			Key:       5,
-			Value:     "TESTVALUE5",
-		},
-		{
-			Operation: INSERT,
-			Key:       100,
-			Value:     "TESTVALUE100",
-		},
-	}
+	entries := testEntries()
 	t1 := &SSTable[int64, string]{
 		Entries:   entries,
 		Name:      filename,
@@ -143,10 +122,10 @@ func TestSSTableSearch(t *testing.T) {
 	}
 
 	t.Run("Search keys in table", func(t *testing.T) {
-		if _, found := t1.Search(3); !found {
+		if v, found := t1.Search(3); !found || v != "TESTVALUE3" {
 			t.Errorf("Should be in table %v", 3)
 		}
-		if _, found := t1.Search(0); !found {
+		if v, found := t1.Search(0); !found || v != "TESTVALUE0" {
 			t.Errorf("Should be in table %v", 0)
 		}
 	})
@@ -164,7 +143,23 @@ func TestSSTableSearch(t *testing.T) {
 func BenchmarkSSTableSearch(b *testing.B) {
 	tmp := b.TempDir()
 	filename := filepath.Join(tmp, "loadtest")
-	entries := []*SSTableEntry[int64, string]{
+	entries := testEntries()
+	t1 := &SSTable[int64, string]{
+		Entries:   entries,
+		Name:      filename,
+		First:     0,
+		Last:      100,
+		CreatedOn: time.Now(),
+	}
+	b.Run("Search keys in table", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t1.Search(2)
+		}
+	})
+}
+
+func testEntries() []*SSTableEntry[int64, string] {
+	return []*SSTableEntry[int64, string]{
 		{
 			Operation: INSERT,
 			Key:       0,
@@ -191,16 +186,4 @@ func BenchmarkSSTableSearch(b *testing.B) {
 			Value:     "TESTVALUE100",
 		},
 	}
-	t1 := &SSTable[int64, string]{
-		Entries:   entries,
-		Name:      filename,
-		First:     0,
-		Last:      100,
-		CreatedOn: time.Now(),
-	}
-	b.Run("Search keys in table", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			t1.Search(2)
-		}
-	})
 }

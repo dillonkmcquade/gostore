@@ -41,8 +41,10 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	slog.Info("File Creation", "type", "SSTable", "name", table.Name)
 	defer file.Close()
+
+	slog.Debug("File Creation", "type", "SSTable", "name", table.Name)
+
 	encoder := gob.NewEncoder(file)
 	err = encoder.Encode(table.Entries)
 	if err != nil {
@@ -71,7 +73,9 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 //
 // *** You must call Close() after opening table
 func (table *SSTable[K, V]) Open() error {
-	assert(len(table.Entries) == 0)
+	if len(table.Entries) > 0 {
+		return nil
+	}
 	table.mut.Lock()
 	file, err := os.OpenFile(table.Name, os.O_RDONLY, 0777)
 	if err != nil {
@@ -87,7 +91,7 @@ func (table *SSTable[K, V]) Open() error {
 // Should only be called after prior call to Open()
 func (table *SSTable[K, V]) Close() error {
 	table.Entries = []*SSTableEntry[K, V]{}
-	table.mut.Unlock()
+	defer table.mut.Unlock()
 	return table.file.Close()
 }
 

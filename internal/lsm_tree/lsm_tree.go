@@ -2,7 +2,7 @@ package lsm_tree
 
 import (
 	"cmp"
-	"errors"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -112,8 +112,8 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 func NewTestLSMOpts(gostorepath string) *LSMOpts {
 	return &LSMOpts{
 		BloomOpts: &BloomFilterOpts{
-			Size:         1000,
-			NumHashFuncs: 1,
+			Size:         100000,
+			NumHashFuncs: 3,
 		},
 		MemTableOpts: &GoStoreMemTableOpts{
 			walPath:  filepath.Join(gostorepath, generateUniqueWALName()),
@@ -191,9 +191,11 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 
 // Write memTable to disk as SSTable
 func (self *GoStore[K, V]) flush() {
+	// create sstable
 	snapshot := self.memTable.Snapshot(self.levelPaths[0])
-	slog.Info("Flush", "size", len(snapshot.Entries), "filename", snapshot.Name)
+	slog.Debug("Flush", "size", len(snapshot.Entries), "filename", snapshot.Name)
 
+	// save to file
 	_, err := snapshot.Sync()
 	if err != nil {
 		panic("panic on snapshot Sync")
@@ -203,14 +205,12 @@ func (self *GoStore[K, V]) flush() {
 	self.memTable.Clear()
 	self.mut.Unlock()
 
-	// Update manifest
 	self.manifest.Levels[0].Add(snapshot)
 	// err = self.manifest.Persist()
 	// if err != nil {
 	// 	panic(err)
 	// }
 
-	// COMPACTION
 	self.compaction.Compact(self.manifest)
 }
 
@@ -228,57 +228,63 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 	return nil
 }
 
-// 1. Check if key exists, exit early if not
-// 2. Read from memtable
-// 3. Read from level0 (unsorted)
-// 4. Read from level 1-3 (sorted)
 // Read the value from the given key. Will return error if value is not found.
 func (self *GoStore[K, V]) Read(key K) (V, error) {
-	if !self.bloom.Has(key) {
-		return SSTableEntry[K, V]{}.Value, errors.New("not found")
-	}
 	self.mut.RLock()
 	defer self.mut.RUnlock()
+	if !self.bloom.Has(key) {
+		return SSTableEntry[K, V]{}.Value, ErrNotFound
+	}
 
 	// Read from memory
 	if val, ok := self.memTable.Get(key); ok {
 		return val, nil
-	} else {
-		level0 := self.manifest.Levels[0]
+	}
 
-		if len(level0.Tables) == 0 {
-			goto nonZeroSearch
+	level0 := self.manifest.Levels[0]
+
+	// Check unsorted level 0
+	for i := len(level0.Tables) - 1; i >= 0; i-- {
+		tbl := level0.Tables[i]
+		err := tbl.Open()
+		if err != nil {
+			slog.Error("File I/O", "cause", err)
+			return Node[K, V]{}.Value, FileIOErr
 		}
-		// Check unsorted level 0
-		// TODO search newest files first
-		for i := len(level0.Tables) - 1; i >= 0; i-- {
-			tbl := level0.Tables[i]
-			err := tbl.Open()
-			if err != nil {
-				return Node[K, V]{}.Value, errors.New("not found")
-			}
-			defer tbl.Close()
+		defer tbl.Close()
 
-			if val, found := tbl.Search(key); found {
+		if val, found := tbl.Search(key); found {
+			return val, nil
+		}
+
+	}
+
+	// binary search sorted levels 1:3
+	for _, level := range self.manifest.Levels[1:] {
+		slog.Debug("Reading", "level", level.Number, "key", key, "#tables", len(level.Tables))
+		if i, found := level.BinarySearch(key); found {
+			err := level.Tables[i].Open()
+			if err != nil {
+				slog.Error("File I/O", "error", err)
+				panic(err)
+			}
+			if val, found := level.Tables[i].Search(key); found {
 				return val, nil
 			}
-
-		}
-	nonZeroSearch:
-
-		// binary search sorted levels 1:3
-		for _, level := range self.manifest.Levels[1:] {
-			if i, found := level.BinarySearch(key); found {
-				level.Tables[i].Open()
-				defer level.Tables[i].Close()
-				val, found := level.Tables[i].Search(key)
-				if found {
-					return val, nil
-				}
-			}
+			defer level.Tables[i].Close()
 		}
 	}
-	return Node[K, V]{}.Value, errors.New("not found")
+	return Node[K, V]{}.Value, ErrNotFound
+}
+
+func (self *GoStore[K, V]) PeekFiles() {
+	for _, level := range self.manifest.Levels {
+		for _, tbl := range level.Tables {
+			tbl.Open()
+			defer tbl.Close()
+			fmt.Printf("Level %v table %v : First %v(actual %v) Last %v(actual %v)\n", level.Number, tbl.Name, tbl.First, tbl.Entries[0], tbl.Last, tbl.Entries[len(tbl.Entries)-1])
+		}
+	}
 }
 
 // Delete a key from the DB
@@ -288,7 +294,7 @@ func (self *GoStore[K, V]) Delete(key K) error {
 		self.bloom.Remove(key)
 		return nil
 	}
-	return errors.New("key not found")
+	return ErrNotFound
 }
 
 // Close closes all associated resources

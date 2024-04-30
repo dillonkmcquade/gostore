@@ -74,6 +74,36 @@ func TestBloomFilterAdd(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("Add 15000", func(t *testing.T) {
+		opts := &BloomFilterOpts{Size: 100000, NumHashFuncs: 7}
+		filter := NewBloomFilter[int](opts)
+
+		for i := 0; i < 15000; i++ {
+			filter.Add(i)
+		}
+
+		for i := 0; i < 15000; i++ {
+			if !filter.Has(i) {
+				t.Errorf("Should contain %v", i)
+			}
+		}
+	})
+
+	t.Run("Add 30000", func(t *testing.T) {
+		opts := &BloomFilterOpts{Size: 300000, NumHashFuncs: 7}
+		filter := NewBloomFilter[int](opts)
+
+		for i := 0; i < 30000; i++ {
+			filter.Add(i)
+		}
+
+		for i := 0; i < 30000; i++ {
+			if !filter.Has(i) {
+				t.Errorf("Should contain %v", i)
+			}
+		}
+	})
 }
 
 func TestBloomFilterRemove(t *testing.T) {

@@ -16,16 +16,16 @@ type BloomFilter[K cmp.Ordered] struct {
 }
 
 type BloomFilterOpts struct {
-	size         int
-	numHashFuncs int
+	Size         int
+	NumHashFuncs int
 }
 
 // NewBloomFilter creates a new Bloom filter with the specified size and number of hash functions.
 func NewBloomFilter[K cmp.Ordered](opts *BloomFilterOpts) *BloomFilter[K] {
 	gob.Register(fnv.New64a())
 	return &BloomFilter[K]{
-		Bitset:    make([]bool, opts.size),
-		HashFuncs: createHashFuncs(opts.numHashFuncs),
+		Bitset:    make([]bool, opts.Size),
+		HashFuncs: createHashFuncs(opts.NumHashFuncs),
 	}
 }
 

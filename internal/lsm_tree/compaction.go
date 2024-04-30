@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -74,7 +76,6 @@ func generateUniqueSegmentName(time time.Time) string {
 }
 
 func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
-	fmt.Println("Compaction")
 	allCompacted := true
 	for _, level := range manifest.Levels {
 		if c.Trigger(level) {
@@ -84,84 +85,81 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 	}
 
 	if allCompacted {
-		fmt.Println("Skipping compaction")
 		return
 	}
 
 	for i, level := range manifest.Levels {
 		if c.Trigger(level) {
 			// level0 compaction -> Skip finding overlaps
+			slog.Info("Compaction", "level", level.Number)
 			if level.Number == 0 {
-				fmt.Println("Level 0 compaction")
 				// Merge all tables
 				merged := c.merge(level.Tables...)
-				fmt.Printf("Merging %v tables\n", len(level.Tables))
-				fmt.Printf("First: %v, Last %v, #entries: %v\n", merged.First, merged.Last, len(merged.Entries))
 
 				// Split
 				split := c.split(merged)
+				slog.Debug("split", "in", len(level.Tables), "out", len(split), "last table #entries", len(split[len(split)-1].Entries))
 
-				fmt.Printf("Split tables: %v\n", len(split))
-
+				var wg sync.WaitGroup
 				// Write files and add to manifest
 				for _, splitTable := range split {
-					go func(tbl *SSTable[K, V], level *Level[K, V]) {
+					wg.Add(1)
+					go func(tbl *SSTable[K, V]) {
 						tbl.Name = filepath.Join(c.LevelPaths[1], generateUniqueSegmentName(tbl.CreatedOn))
 
-						fmt.Printf("Syncing to %v\n", tbl.Name)
+						slog.Info("Sync", "filename", tbl.Name)
 						_, err := tbl.Sync()
 						if err != nil {
 							panic(err)
 						}
-						manifest.mut.Lock()
 						manifest.Levels[level.Number+1].Add(tbl)
-						manifest.mut.Unlock()
-					}(splitTable, level)
+						wg.Done()
+					}(splitTable)
 				}
 
 				for _, tbl := range level.Tables {
-					go func(name string) { os.Remove(name) }(tbl.Name)
+					wg.Add(1)
+					go func(name string) {
+						slog.Info("Remove", "filename", name)
+						os.Remove(name)
+						wg.Done()
+					}(tbl.Name)
 				}
+				wg.Wait()
 
-				manifest.mut.Lock()
 				manifest.Levels[0].Tables = []*SSTable[K, V]{}
 				manifest.Levels[0].Size = 0
-				manifest.mut.Unlock()
 			} else {
-				fmt.Println("Level 1+ compaction")
 				// Choose oldest table
 				table := findOldestTable(level.Tables)
 				// find tables in lowerlevel that overlap with table in upper level
 				overlaps := c.findOverlappingSSTables(table, manifest.Levels[i+1])
 
 				if len(overlaps) == 0 {
-					fmt.Println("Compacting into empty lower level")
 					// move upperlevel -> lowerlevel
 					newLocation := filepath.Join(c.LevelPaths[i+1], filepath.Base(table.Name))
+
 					os.Rename(table.Name, newLocation)
+
+					slog.Info("File modification", "type", "rename", "old", table.Name, "new", newLocation)
+
 					table.Name = newLocation
 
 					// Update manifest
-					manifest.mut.Lock()
 					manifest.Levels[i+1].Add(table)
 					manifest.Levels[i].Remove(table)
-					manifest.mut.Unlock()
 					return
 				}
 
 				merged := c.merge(append(overlaps, table)...)
-				fmt.Printf("Merging %v tables\n", len(level.Tables))
-				fmt.Printf("First: %v, Last %v, #entries: %v\n", merged.First, merged.Last, len(merged.Entries))
 
 				// Split merged table into smaller sizes
 				split := c.split(merged)
-				fmt.Printf("Split tables: %v\n", len(split))
 
-				manifest.mut.Lock()
 				// Write files and add to manifest
 				for _, splitTable := range split {
 					splitTable.Name = filepath.Join(c.LevelPaths[i+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
-					fmt.Printf("Syncing to %v\n", splitTable.Name)
+					slog.Info("Sync", "level", level.Number+1, "filename", splitTable.Name)
 					_, err := splitTable.Sync()
 					if err != nil {
 						panic(err)
@@ -173,7 +171,6 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 				for _, lap := range overlaps {
 					manifest.Levels[i+1].Remove(lap)
 				}
-				manifest.mut.Unlock()
 
 				// Cleanup table from upper level
 				level.Remove(table)
@@ -235,8 +232,7 @@ func (c *CompactionImpl[K, V]) merge(tables ...*SSTable[K, V]) *SSTable[K, V] {
 		if len(table.Entries) == 0 {
 			err := table.Open() // We dont close because we arent keeping this table
 			if err != nil {
-				fmt.Println(err)
-				continue
+				panic(err)
 			}
 		}
 		assert(len(table.Entries) > 0)
@@ -249,6 +245,8 @@ func (c *CompactionImpl[K, V]) merge(tables ...*SSTable[K, V]) *SSTable[K, V] {
 			}
 		}
 	}
+
+	slog.Debug("Merge", "tree size", tree.size, "# tables", len(tables))
 
 	sstable := &SSTable[K, V]{
 		Entries: make([]*SSTableEntry[K, V], 0),

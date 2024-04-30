@@ -7,7 +7,7 @@ import (
 
 func TestBloomFilterAdd(t *testing.T) {
 	t.Run("Add int64", func(t *testing.T) {
-		opts := &BloomFilterOpts{size: 100, numHashFuncs: 3}
+		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
 		bf := NewBloomFilter[int64](opts)
 
 		integers := []int64{42, 123, 987}
@@ -30,7 +30,7 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add int32", func(t *testing.T) {
-		opts := &BloomFilterOpts{size: 100, numHashFuncs: 3}
+		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
 		bf := NewBloomFilter[int32](opts)
 
 		integers := []int32{42, 123, 987}
@@ -53,7 +53,7 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add string", func(t *testing.T) {
-		opts := &BloomFilterOpts{size: 100, numHashFuncs: 3}
+		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
 		filter := NewBloomFilter[string](opts)
 
 		strings := []string{"hello", "world", "bloom"}
@@ -77,7 +77,7 @@ func TestBloomFilterAdd(t *testing.T) {
 }
 
 func TestBloomFilterRemove(t *testing.T) {
-	opts := &BloomFilterOpts{size: 100, numHashFuncs: 3}
+	opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
 	filter := NewBloomFilter[string](opts)
 
 	strings := []string{"hello", "world", "bloom"}
@@ -107,7 +107,7 @@ func TestBloomIO(t *testing.T) {
 	})
 
 	t.Run("Save bloom to file", func(t *testing.T) {
-		opts := &BloomFilterOpts{size: 100, numHashFuncs: 3}
+		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
 		filter := NewBloomFilter[string](opts)
 
 		strings := []string{"hello", "world", "bloom"}

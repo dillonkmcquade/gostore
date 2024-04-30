@@ -3,11 +3,9 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -19,7 +17,6 @@ type GostoreMemTable[K cmp.Ordered, V any] struct {
 	// been written to disk, the current in-memory state may be recreated again after restart.
 	wal      *WAL[K, V]
 	max_size uint
-	mut      sync.RWMutex
 }
 
 func (tbl *GostoreMemTable[K, V]) Iterator() Iterator[K, V] {
@@ -27,19 +24,15 @@ func (tbl *GostoreMemTable[K, V]) Iterator() Iterator[K, V] {
 }
 
 func (tbl *GostoreMemTable[K, V]) ExceedsSize() bool {
-	return tbl.rbt.Size() > tbl.max_size
+	return tbl.rbt.Size() >= tbl.max_size
 }
 
 func (tbl *GostoreMemTable[K, V]) Put(key K, val V) error {
-	tbl.mut.Lock()
-	defer tbl.mut.Unlock()
 	tbl.rbt.Put(key, val)
 	return tbl.wal.Write(key, val)
 }
 
 func (tbl *GostoreMemTable[K, V]) Get(key K) (V, bool) {
-	tbl.mut.RLock()
-	defer tbl.mut.RUnlock()
 	val, found := tbl.rbt.Get(key)
 	return val, found
 }
@@ -58,9 +51,20 @@ func (tbl *GostoreMemTable[K, V]) Close() error {
 }
 
 func (tbl *GostoreMemTable[K, V]) Delete(key K) {
-	tbl.mut.Lock()
-	defer tbl.mut.Unlock()
 	tbl.rbt.Delete(key)
+}
+
+func (tbl *GostoreMemTable[K, V]) Clone() MemTable[K, V] {
+	newWalName := filepath.Join(filepath.Dir(tbl.wal.file.Name()), generateUniqueWALName())
+	wal, err := newWal[K, V](newWalName)
+	if err != nil {
+		panic(err)
+	}
+	return &GostoreMemTable[K, V]{
+		rbt:      &RedBlackTree[K, V]{},
+		wal:      wal,
+		max_size: tbl.max_size,
+	}
 }
 
 // Restores database state from Write-Ahead-Log
@@ -90,12 +94,10 @@ func (self *GostoreMemTable[K, V]) Replay(filename string) error {
 
 // Returns an SSTable filled with entries, with no size
 func (tbl *GostoreMemTable[K, V]) Snapshot(destDir string) *SSTable[K, V] {
-	tbl.mut.Lock()
-	defer tbl.mut.Unlock()
 	timestamp := time.Now()
 	sstable := &SSTable[K, V]{
 		Entries:   make([]*SSTableEntry[K, V], 0),
-		Name:      filepath.Join(destDir, fmt.Sprintf("%v.segment", timestamp.Unix())),
+		Name:      filepath.Join(destDir, generateUniqueSegmentName(timestamp)),
 		CreatedOn: timestamp,
 	}
 	iter := tbl.rbt.Iterator()

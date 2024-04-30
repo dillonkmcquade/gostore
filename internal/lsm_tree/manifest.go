@@ -3,8 +3,10 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/json"
+	"log/slog"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 )
@@ -14,10 +16,13 @@ type Level[K cmp.Ordered, V any] struct {
 	Tables  []*SSTable[K, V]
 	Size    int64
 	MaxSize int64
+	mut     sync.Mutex
 }
 
 // Binary search the current level for table that has range overlapping key
 func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
+	l.mut.Lock()
+	defer l.mut.Unlock()
 	// find index of table that COULD contain key
 	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= key && l.Tables[i].Last >= key })
 	if index >= 0 && index < len(l.Tables) {
@@ -27,6 +32,9 @@ func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
 }
 
 func (l *Level[K, V]) Add(table *SSTable[K, V]) {
+	slog.Debug("Level modification", "type", "add", "level", l.Number, "id", filepath.Base(table.Name))
+	l.mut.Lock()
+	defer l.mut.Unlock()
 	if len(l.Tables) == 0 {
 		l.Tables = append(l.Tables, table)
 		l.Size += table.Size
@@ -38,6 +46,9 @@ func (l *Level[K, V]) Add(table *SSTable[K, V]) {
 }
 
 func (l *Level[K, V]) Remove(table *SSTable[K, V]) {
+	slog.Debug("Level modification", "type", "remove", "level", l.Number, "id", filepath.Base(table.Name))
+	l.mut.Lock()
+	defer l.mut.Unlock()
 	assert(len(l.Tables) > 0)
 
 	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First <= table.First && l.Tables[i].Last <= table.Last })
@@ -66,7 +77,6 @@ func insertAt[T any](slice []T, i int, val T) []T {
 type Manifest[K cmp.Ordered, V any] struct {
 	Levels []*Level[K, V]
 	Path   string
-	mut    sync.Mutex
 }
 
 // Writes manifest to p. If p is nil, writes to manifestPath

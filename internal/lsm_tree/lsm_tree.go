@@ -3,9 +3,9 @@ package lsm_tree
 import (
 	"cmp"
 	"errors"
-	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -64,8 +64,8 @@ type LSMOpts struct {
 func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 	return &LSMOpts{
 		BloomOpts: &BloomFilterOpts{
-			size:         960000,
-			numHashFuncs: 7,
+			Size:         960000,
+			NumHashFuncs: 7,
 		},
 		MemTableOpts: &GoStoreMemTableOpts{
 			walPath:  filepath.Join(gostorepath, generateUniqueWALName()),
@@ -112,8 +112,8 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 func NewTestLSMOpts(gostorepath string) *LSMOpts {
 	return &LSMOpts{
 		BloomOpts: &BloomFilterOpts{
-			size:         1000,
-			numHashFuncs: 1,
+			Size:         1000,
+			NumHashFuncs: 1,
 		},
 		MemTableOpts: &GoStoreMemTableOpts{
 			walPath:  filepath.Join(gostorepath, generateUniqueWALName()),
@@ -175,8 +175,9 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 	if err != nil {
 		switch e := err.(type) {
 		case *LogApplyErr[K, V]:
-			fmt.Println("ERROR WHILE RECREATING DATABASE STATE FROM WRITE AHEAD LOG.")
-			fmt.Printf("POSSIBLE DATA LOSS HAS OCCURRED: %v\n", e.Error())
+			slog.Error("ERROR WHILE RECREATING DATABASE STATE FROM WRITE AHEAD LOG.")
+			slog.Error("POSSIBLE DATA LOSS HAS OCCURRED")
+			slog.Error(e.Error())
 		case *os.PathError:
 			// Error opening file. Should have log.Fatal'd on WAL creation if file could not be created
 			break
@@ -191,6 +192,7 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 // Write memTable to disk as SSTable
 func (self *GoStore[K, V]) flush() {
 	snapshot := self.memTable.Snapshot(self.levelPaths[0])
+	slog.Info("Flush", "size", len(snapshot.Entries), "filename", snapshot.Name)
 
 	_, err := snapshot.Sync()
 	if err != nil {
@@ -209,7 +211,7 @@ func (self *GoStore[K, V]) flush() {
 	// }
 
 	// COMPACTION
-	go self.compaction.Compact(self.manifest)
+	self.compaction.Compact(self.manifest)
 }
 
 // Write the Key-Value pair to the memtable
@@ -219,7 +221,7 @@ func (self *GoStore[K, V]) Write(key K, val V) error {
 	self.memTable.Put(key, val)
 	self.bloom.Add(key)
 	if self.memTable.ExceedsSize() {
-		go self.flush()
+		self.flush()
 		return nil
 	}
 	self.mut.Unlock()
@@ -242,26 +244,33 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 	if val, ok := self.memTable.Get(key); ok {
 		return val, nil
 	} else {
-		level0_tbl := self.manifest.Levels[0]
+		level0 := self.manifest.Levels[0]
 
+		if len(level0.Tables) == 0 {
+			goto nonZeroSearch
+		}
 		// Check unsorted level 0
 		// TODO search newest files first
-		for _, tbl := range level0_tbl.Tables {
+		for i := len(level0.Tables) - 1; i >= 0; i-- {
+			tbl := level0.Tables[i]
 			err := tbl.Open()
 			if err != nil {
 				return Node[K, V]{}.Value, errors.New("not found")
 			}
-
 			defer tbl.Close()
 
 			if val, found := tbl.Search(key); found {
 				return val, nil
 			}
+
 		}
+	nonZeroSearch:
 
 		// binary search sorted levels 1:3
 		for _, level := range self.manifest.Levels[1:] {
 			if i, found := level.BinarySearch(key); found {
+				level.Tables[i].Open()
+				defer level.Tables[i].Close()
 				val, found := level.Tables[i].Search(key)
 				if found {
 					return val, nil

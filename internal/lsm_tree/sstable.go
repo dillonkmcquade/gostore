@@ -3,6 +3,7 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
+	"log/slog"
 	"os"
 	"sort"
 	"sync"
@@ -40,6 +41,7 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	slog.Info("File Creation", "type", "SSTable", "name", table.Name)
 	defer file.Close()
 	encoder := gob.NewEncoder(file)
 	err = encoder.Encode(table.Entries)

@@ -3,6 +3,7 @@ package lsm_tree
 import (
 	"cmp"
 	"fmt"
+	"log/slog"
 	"os"
 )
 
@@ -71,6 +72,7 @@ type CompactionController[K cmp.Ordered, V any] interface {
 
 // Creates directory if it does not exist.
 func mkDir(filename string) error {
+	slog.Info("File Creation", "type", "dir", "name", filename)
 	_, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return os.MkdirAll(filename, 0777)

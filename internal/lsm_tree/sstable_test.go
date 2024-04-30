@@ -160,3 +160,47 @@ func TestSSTableSearch(t *testing.T) {
 		}
 	})
 }
+
+func BenchmarkSSTableSearch(b *testing.B) {
+	tmp := b.TempDir()
+	filename := filepath.Join(tmp, "loadtest")
+	entries := []*SSTableEntry[int64, string]{
+		{
+			Operation: INSERT,
+			Key:       0,
+			Value:     "TESTVALUE0",
+		},
+		{
+			Operation: INSERT,
+			Key:       1,
+			Value:     "TESTVALUE1",
+		},
+		{
+			Operation: INSERT,
+			Key:       3,
+			Value:     "TESTVALUE3",
+		},
+		{
+			Operation: INSERT,
+			Key:       5,
+			Value:     "TESTVALUE5",
+		},
+		{
+			Operation: INSERT,
+			Key:       100,
+			Value:     "TESTVALUE100",
+		},
+	}
+	t1 := &SSTable[int64, string]{
+		Entries:   entries,
+		Name:      filename,
+		First:     0,
+		Last:      100,
+		CreatedOn: time.Now(),
+	}
+	b.Run("Search keys in table", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t1.Search(2)
+		}
+	})
+}

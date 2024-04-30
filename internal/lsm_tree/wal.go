@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
+	"sync"
 )
 
 type Operation byte
@@ -17,6 +18,7 @@ const (
 type WAL[K cmp.Ordered, V any] struct {
 	file    *os.File
 	encoder *gob.Encoder
+	mut     sync.Mutex
 }
 
 func generateUniqueWALName() string {
@@ -53,14 +55,22 @@ func (self *WAL[K, V]) Size() (int64, error) {
 
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
+	self.mut.Lock()
+	defer self.mut.Unlock()
 	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}
 	err := self.encoder.Encode(entry)
 	if err != nil {
 		return err
 	}
-	// Ensure the entry is flushed to disk immediately.
-	err = self.file.Sync()
-	return err
+
+	// // Ensure the entry is flushed to disk immediately.
+	// go func() {
+	// 	syncErr := self.file.Sync()
+	// 	if syncErr != nil {
+	// 		panic(syncErr)
+	// 	}
+	// }()
+	return nil
 }
 
 // Close closes the Write-Ahead Log file.

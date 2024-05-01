@@ -17,10 +17,11 @@ const (
 )
 
 type WAL[K cmp.Ordered, V any] struct {
-	file      *os.File
-	encoder   *gob.Encoder
-	mut       sync.Mutex
-	writeChan chan *LogEntry[K, V]
+	file             *os.File
+	encoder          *gob.Encoder
+	writeChan        chan *LogEntry[K, V]
+	batch_write_size int
+	mut              sync.Mutex
 }
 
 func generateUniqueWALName() string {
@@ -32,10 +33,10 @@ func generateUniqueWALName() string {
 }
 
 // Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
-func newWal[K cmp.Ordered, V any](filename string) (*WAL[K, V], error) {
+func newWal[K cmp.Ordered, V any](filename string, write_size int) (*WAL[K, V], error) {
 	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0777)
 	wal := &WAL[K, V]{file: file, encoder: gob.NewEncoder(file), writeChan: make(chan *LogEntry[K, V])}
-	go wal.waitForWrites(10)
+	go wal.waitForWrites(write_size)
 	return wal, err
 }
 

@@ -10,8 +10,9 @@ func TestNewMemTable(t *testing.T) {
 	wal := filepath.Join(tmp, "wal.dat")
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
-		walPath:  wal,
-		Max_size: 50,
+		walPath:          wal,
+		Max_size:         50,
+		Batch_write_size: 10,
 	})
 	if err != nil {
 		t.Error(err)
@@ -24,8 +25,9 @@ func TestMemTableCRUD(t *testing.T) {
 	wal := filepath.Join(tmp, "wal.dat")
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
-		walPath:  wal,
-		Max_size: 2000,
+		walPath:          wal,
+		Max_size:         2000,
+		Batch_write_size: 10,
 	})
 	if err != nil {
 		t.Error(err)
@@ -104,8 +106,9 @@ func TestMemTableIO(t *testing.T) {
 	wal := filepath.Join(tmp, "wal.dat")
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
-		walPath:  wal,
-		Max_size: 1000,
+		walPath:          wal,
+		Max_size:         1000,
+		Batch_write_size: 10,
 	})
 	defer mem.Close()
 
@@ -122,8 +125,9 @@ func TestMemTableIO(t *testing.T) {
 
 	t.Run("Test Replay", func(t *testing.T) {
 		mem2, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
-			walPath:  wal,
-			Max_size: 1000,
+			walPath:          wal,
+			Max_size:         1000,
+			Batch_write_size: 10,
 		})
 		if err != nil {
 			t.Error(err)

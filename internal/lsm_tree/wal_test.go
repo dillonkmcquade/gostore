@@ -10,7 +10,7 @@ import (
 
 func TestWALWrite(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
+	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"), 10)
 	if err != nil {
 		t.Error(err)
 	}
@@ -23,7 +23,7 @@ func TestWALWrite(t *testing.T) {
 
 func TestWALDecode(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"))
+	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"), 10)
 	if err != nil {
 		t.Error(err)
 	}
@@ -61,7 +61,7 @@ func TestWALDecode(t *testing.T) {
 
 func TestWALDiscard(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.dat"))
+	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.dat"), 10)
 	if err != nil {
 		t.Error(err)
 	}

@@ -66,8 +66,9 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 			NumHashFuncs: 7,
 		},
 		MemTableOpts: &GoStoreMemTableOpts{
-			walPath:  filepath.Join(gostorepath, generateUniqueWALName()),
-			Max_size: 20000,
+			walPath:          filepath.Join(gostorepath, generateUniqueWALName()),
+			Batch_write_size: 10,
+			Max_size:         20000,
 		},
 		ManifestOpts: &ManifestOpts{
 			Path:            filepath.Join(gostorepath, "manifest.dat"),
@@ -114,8 +115,9 @@ func NewTestLSMOpts(gostorepath string) *LSMOpts {
 			NumHashFuncs: 3,
 		},
 		MemTableOpts: &GoStoreMemTableOpts{
-			walPath:  filepath.Join(gostorepath, generateUniqueWALName()),
-			Max_size: 1000,
+			walPath:          filepath.Join(gostorepath, generateUniqueWALName()),
+			Batch_write_size: 10,
+			Max_size:         1000,
 		},
 		ManifestOpts: &ManifestOpts{
 			Path:            filepath.Join(gostorepath, "manifest.dat"),

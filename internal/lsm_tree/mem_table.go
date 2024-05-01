@@ -56,7 +56,7 @@ func (tbl *GostoreMemTable[K, V]) Delete(key K) {
 
 func (tbl *GostoreMemTable[K, V]) Clone() MemTable[K, V] {
 	newWalName := filepath.Join(filepath.Dir(tbl.wal.file.Name()), generateUniqueWALName())
-	wal, err := newWal[K, V](newWalName)
+	wal, err := newWal[K, V](newWalName, tbl.wal.batch_write_size)
 	if err != nil {
 		panic(err)
 	}
@@ -114,12 +114,13 @@ func (tbl *GostoreMemTable[K, V]) Snapshot(destDir string) *SSTable[K, V] {
 }
 
 type GoStoreMemTableOpts struct {
-	walPath  string // Path to desired WAL location
-	Max_size uint   // Max size before triggering flush
+	Batch_write_size int    // number of entries to write at a time
+	walPath          string // Path to desired WAL location
+	Max_size         uint   // Max size before triggering flush
 }
 
 func NewGostoreMemTable[K cmp.Ordered, V any](opts *GoStoreMemTableOpts) (*GostoreMemTable[K, V], error) {
-	wal, err := newWal[K, V](opts.walPath)
+	wal, err := newWal[K, V](opts.walPath, opts.Batch_write_size)
 	if err != nil {
 		return nil, err
 	}

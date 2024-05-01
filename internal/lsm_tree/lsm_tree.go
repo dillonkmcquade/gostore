@@ -198,7 +198,7 @@ func (store *GoStore[K, V]) flush() {
 	// save to file
 	_, err := snapshot.Sync()
 	if err != nil {
-		panic("panic on snapshot Sync")
+		panic(err)
 	}
 
 	// Discard memTable & write-ahead log

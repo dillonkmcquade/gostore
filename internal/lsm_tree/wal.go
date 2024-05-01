@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -34,7 +35,8 @@ func generateUniqueWALName() string {
 
 // Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
 func newWal[K cmp.Ordered, V any](filename string, write_size int) (*WAL[K, V], error) {
-	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0777)
+	path := filepath.Clean(filename)
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
 	wal := &WAL[K, V]{file: file, encoder: gob.NewEncoder(file), writeChan: make(chan *LogEntry[K, V])}
 	go wal.waitForWrites(write_size)
 	return wal, err

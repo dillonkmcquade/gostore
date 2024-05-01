@@ -37,7 +37,7 @@ func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
 
 // Sync flushes all in-memory entries to stable storage
 func (table *SSTable[K, V]) Sync() (int64, error) {
-	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0777)
+	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return 0, err
 	}
@@ -77,7 +77,7 @@ func (table *SSTable[K, V]) Open() error {
 		return nil
 	}
 	table.mut.Lock()
-	file, err := os.OpenFile(table.Name, os.O_RDONLY, 0777)
+	file, err := os.OpenFile(table.Name, os.O_RDONLY, 0600)
 	if err != nil {
 		return err
 	}

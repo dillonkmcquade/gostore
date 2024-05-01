@@ -79,7 +79,7 @@ func mkDir(filename string) error {
 	slog.Debug("File Creation", "type", "dir", "name", filename)
 	_, err := os.Stat(filename)
 	if os.IsNotExist(err) {
-		return os.MkdirAll(filename, 0777)
+		return os.MkdirAll(filename, 0750)
 	}
 	return err
 }

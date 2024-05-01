@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 type BloomFilter[K cmp.Ordered] struct {
@@ -75,7 +76,8 @@ func createHashFuncs(numHashFuncs int) []hash.Hash64 {
 
 // Save saves the Bloom filter to a file.
 func (bf *BloomFilter[K]) Save(filename string) error {
-	file, err := os.Create(filename)
+	path := filepath.Clean(filename)
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
@@ -91,7 +93,8 @@ func (bf *BloomFilter[K]) Save(filename string) error {
 
 // loadBloomFromFile loads the Bloom filter from a file.
 func loadBloomFromFile[K cmp.Ordered](filename string) (*BloomFilter[K], error) {
-	file, err := os.Open(filename)
+	path := filepath.Clean(filename)
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}

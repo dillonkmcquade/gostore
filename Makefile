@@ -15,7 +15,6 @@ run:
 
 clean:
 	rm --force gostore
-	rm -f ~/.gostore/manifest.json
 	rm -f ~/.gostore/*.dat
 	rm -f ~/.gostore/l0/*
 	rm -f ~/.gostore/l1/*
@@ -23,10 +22,10 @@ clean:
 	rm -f ~/.gostore/l3/*
 
 test: clean 
-	go test ./internal/...
+	go test -v -race ./internal/...
 
 integration-test:
-	go test -v ./tests/... -count=1
+	go test -v -race ./tests/... -count=1
 
 
 .PHONY: run build clean test integration-test proto-compile

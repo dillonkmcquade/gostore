@@ -69,8 +69,9 @@ func (tbl *GostoreMemTable[K, V]) Clone() MemTable[K, V] {
 
 // Restores database state from Write-Ahead-Log
 func (self *GostoreMemTable[K, V]) Replay(filename string) error {
+	path := filepath.Clean(filename)
 	self.rbt.Clear()
-	file, err := os.Open(filename)
+	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}

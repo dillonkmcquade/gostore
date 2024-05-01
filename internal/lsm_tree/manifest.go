@@ -108,6 +108,37 @@ type Manifest[K cmp.Ordered, V any] struct {
 	file    *os.File
 }
 
+type ManifestOpts struct {
+	Path            string // Path to manifest
+	Num_levels      int    // Number of compaction levels
+	Level0_max_size int64  // Max size of level 0 in bytes
+}
+
+// Create new manifest
+func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], error) {
+	var manifest *Manifest[K, V]
+	file, err := os.OpenFile(opts.Path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return nil, err
+	}
+	manifest = &Manifest[K, V]{
+		Path:    opts.Path,
+		Levels:  make([]*Level[K, V], opts.Num_levels),
+		encoder: gob.NewEncoder(file),
+		file:    file,
+	}
+	for levelNumber := 0; levelNumber < opts.Num_levels; levelNumber++ {
+		multiplier := math.Pow(10, float64(levelNumber))
+		manifest.Levels[levelNumber] = &Level[K, V]{
+			Number:  levelNumber,
+			Size:    0,
+			MaxSize: opts.Level0_max_size * int64(multiplier),
+		}
+	}
+	err = manifest.Replay()
+	return manifest, err
+}
+
 func (m *Manifest[K, V]) AddTable(table *SSTable[K, V], level int) error {
 	m.Levels[level].Add(table)
 	err := m.encoder.Encode(&ManifestEntry[K, V]{Op: ADD, Table: table, Level: level})
@@ -158,35 +189,4 @@ func (m *Manifest[K, V]) Replay() error {
 		entry.Apply(m.Levels[entry.Level])
 	}
 	return nil
-}
-
-type ManifestOpts struct {
-	Path            string // Path to manifest
-	Num_levels      int    // Number of compaction levels
-	Level0_max_size int64  // Max size of level 0 in bytes
-}
-
-// Create new manifest
-func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], error) {
-	var manifest *Manifest[K, V]
-	file, err := os.OpenFile(opts.Path, os.O_RDWR|os.O_CREATE, 0777)
-	if err != nil {
-		return nil, err
-	}
-	manifest = &Manifest[K, V]{
-		Path:    opts.Path,
-		Levels:  make([]*Level[K, V], opts.Num_levels),
-		encoder: gob.NewEncoder(file),
-		file:    file,
-	}
-	for levelNumber := 0; levelNumber < opts.Num_levels; levelNumber++ {
-		multiplier := math.Pow(10, float64(levelNumber))
-		manifest.Levels[levelNumber] = &Level[K, V]{
-			Number:  levelNumber,
-			Size:    0,
-			MaxSize: opts.Level0_max_size * int64(multiplier),
-		}
-	}
-	err = manifest.Replay()
-	return manifest, err
 }

@@ -78,16 +78,18 @@ func (self *GostoreMemTable[K, V]) Replay(filename string) error {
 
 	dec := gob.NewDecoder(file)
 	for {
-		entry := &LogEntry[K, V]{}
-		if decodeErr := dec.Decode(entry); decodeErr != nil {
+		entry := []*LogEntry[K, V]{}
+		if decodeErr := dec.Decode(&entry); decodeErr != nil {
 			if decodeErr == io.EOF {
 				break // End of log file
 			}
-			return &LogApplyErr[K, V]{Entry: entry, Cause: decodeErr}
+			return &LogApplyErr[K, V]{Cause: decodeErr}
 		}
 
 		// Apply the entry to the database
-		entry.Apply(self.rbt)
+		for _, e := range entry {
+			e.Apply(self.rbt)
+		}
 	}
 	return nil
 }

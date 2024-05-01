@@ -33,7 +33,8 @@ func NewBloomFilter[K cmp.Ordered](opts *BloomFilterOpts) *BloomFilter[K] {
 func (bf *BloomFilter[K]) Add(key K) {
 	for _, hf := range bf.HashFuncs {
 		hf.Reset()
-		hf.Write([]byte(fmt.Sprintf("%v", key)))
+		var buf []byte
+		hf.Write(fmt.Append(buf, key))
 		index := hf.Sum64() % uint64(len(bf.Bitset))
 		bf.Bitset[index] = true
 	}
@@ -42,7 +43,8 @@ func (bf *BloomFilter[K]) Add(key K) {
 func (bf *BloomFilter[K]) Remove(key K) {
 	for _, hf := range bf.HashFuncs {
 		hf.Reset()
-		hf.Write([]byte(fmt.Sprintf("%v", key)))
+		var buf []byte
+		hf.Write(fmt.Append(buf, key))
 		index := hf.Sum64() % uint64(len(bf.Bitset))
 		bf.Bitset[index] = false
 	}
@@ -52,7 +54,8 @@ func (bf *BloomFilter[K]) Remove(key K) {
 func (bf *BloomFilter[K]) Has(key K) bool {
 	for _, hf := range bf.HashFuncs {
 		hf.Reset()
-		hf.Write([]byte(fmt.Sprintf("%v", key)))
+		var buf []byte
+		hf.Write(fmt.Append(buf, key))
 		index := hf.Sum64() % uint64(len(bf.Bitset))
 		if !bf.Bitset[index] {
 			return false

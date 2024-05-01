@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/gob"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 )
@@ -16,9 +17,10 @@ const (
 )
 
 type WAL[K cmp.Ordered, V any] struct {
-	file    *os.File
-	encoder *gob.Encoder
-	mut     sync.Mutex
+	file      *os.File
+	encoder   *gob.Encoder
+	mut       sync.Mutex
+	writeChan chan *LogEntry[K, V]
 }
 
 func generateUniqueWALName() string {
@@ -32,7 +34,31 @@ func generateUniqueWALName() string {
 // Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
 func newWal[K cmp.Ordered, V any](filename string) (*WAL[K, V], error) {
 	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0777)
-	return &WAL[K, V]{file: file, encoder: gob.NewEncoder(file)}, err
+	wal := &WAL[K, V]{file: file, encoder: gob.NewEncoder(file), writeChan: make(chan *LogEntry[K, V])}
+	go wal.waitForWrites(10)
+	return wal, err
+}
+
+func (self *WAL[K, V]) waitForWrites(batchSize int) {
+	batch := make([]*LogEntry[K, V], 0)
+	for entry := range self.writeChan {
+		batch = append(batch, entry)
+		if len(batch) >= batchSize {
+			self.mut.Lock()
+			err := self.encoder.Encode(batch)
+			if err != nil {
+				slog.Error("error", "cause", err)
+			}
+			batch = []*LogEntry[K, V]{}
+			err = self.file.Sync()
+			if err != nil {
+				slog.Error("error", "cause", err)
+			}
+			slog.Info("Sync", "filename", self.file.Name())
+			self.mut.Unlock()
+		}
+	}
+	defer close(self.writeChan)
 }
 
 // Discards the contents of the current WAL
@@ -55,21 +81,8 @@ func (self *WAL[K, V]) Size() (int64, error) {
 
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
-	self.mut.Lock()
-	defer self.mut.Unlock()
 	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}
-	err := self.encoder.Encode(entry)
-	if err != nil {
-		return err
-	}
-
-	// // Ensure the entry is flushed to disk immediately.
-	// go func() {
-	// 	syncErr := self.file.Sync()
-	// 	if syncErr != nil {
-	// 		panic(syncErr)
-	// 	}
-	// }()
+	self.writeChan <- entry
 	return nil
 }
 

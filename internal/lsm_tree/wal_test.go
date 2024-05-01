@@ -28,9 +28,11 @@ func TestWALDecode(t *testing.T) {
 		t.Error(err)
 	}
 	defer wal.Close()
-	err = wal.Write(5, "Helloworld")
-	if err != nil {
-		t.Error(err)
+	for i := 0; i < 201; i++ {
+		err = wal.Write(i, "Helloworld")
+		if err != nil {
+			t.Error(err)
+		}
 	}
 
 	file, err := os.Open(filepath.Join(tmpdir, "wal.db"))
@@ -40,13 +42,20 @@ func TestWALDecode(t *testing.T) {
 	defer file.Close()
 	dec := gob.NewDecoder(file)
 
-	var entry LogEntry[int, any]
-	err = dec.Decode(&entry)
-	if err != nil && err != io.EOF {
-		t.Error(err)
+	var entries []*LogEntry[int, any]
+	for {
+		var entry []*LogEntry[int, any]
+		if err = dec.Decode(&entry); err != nil {
+			if err == io.EOF {
+				break
+			} else {
+				t.Error(err)
+			}
+		}
+		entries = append(entries, entry...)
 	}
-	if entry.Key != 5 {
-		t.Error("Should be 5")
+	if len(entries) != 200 {
+		t.Errorf("Should have decoded 200 entries, received %v", len(entries))
 	}
 }
 

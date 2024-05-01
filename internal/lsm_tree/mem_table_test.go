@@ -105,7 +105,7 @@ func TestMemTableIO(t *testing.T) {
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
 		walPath:  wal,
-		Max_size: 2000,
+		Max_size: 1000,
 	})
 	defer mem.Close()
 
@@ -113,7 +113,7 @@ func TestMemTableIO(t *testing.T) {
 		t.Error(err)
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 200; i++ {
 		err = mem.Put(int64(i), "TESTVALUE")
 		if err != nil {
 			t.Error(err)
@@ -123,14 +123,14 @@ func TestMemTableIO(t *testing.T) {
 	t.Run("Test Replay", func(t *testing.T) {
 		mem2, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
 			walPath:  wal,
-			Max_size: 2000,
+			Max_size: 1000,
 		})
 		if err != nil {
 			t.Error(err)
 		}
 		defer mem2.Close()
 
-		if mem2.Size() != 100 {
+		if mem2.Size() != 200 {
 			t.Error("Should be empty memtable")
 		}
 
@@ -151,7 +151,7 @@ func TestMemTableIO(t *testing.T) {
 		if _, found := tbl.Search(5); !found {
 			t.Error("5 Should be an entry in the SSTable")
 		}
-		if tbl.First != 0 || tbl.Last != 99 {
+		if tbl.First != 0 || tbl.Last != 199 {
 			t.Error("First or last are incorrect")
 		}
 	})

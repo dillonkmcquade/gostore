@@ -2,7 +2,6 @@ package lsm_tree
 
 import (
 	"cmp"
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -275,16 +274,6 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 		}
 	}
 	return Node[K, V]{}.Value, ErrNotFound
-}
-
-func (self *GoStore[K, V]) PeekFiles() {
-	for _, level := range self.manifest.Levels {
-		for _, tbl := range level.Tables {
-			tbl.Open()
-			defer tbl.Close()
-			fmt.Printf("Level %v table %v : First %v(actual %v) Last %v(actual %v)\n", level.Number, tbl.Name, tbl.First, tbl.Entries[0], tbl.Last, tbl.Entries[len(tbl.Entries)-1])
-		}
-	}
 }
 
 // Delete a key from the DB

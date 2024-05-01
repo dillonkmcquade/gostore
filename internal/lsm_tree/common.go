@@ -2,6 +2,7 @@ package lsm_tree
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,6 +17,11 @@ const (
 	LEVEL0_MAX_SIZE  = 300        // Max size of level0 in MB
 )
 
+var (
+	ErrNotFound = errors.New("Not found")
+	FileIOErr   = errors.New("Error opening table")
+)
+
 type LSMTree[K cmp.Ordered, V any] interface {
 	// Write the Key-Value pair to the memtable
 	Write(K, V) error
@@ -25,8 +31,6 @@ type LSMTree[K cmp.Ordered, V any] interface {
 	Delete(K) error
 	// Release associated resources
 	Close() error
-	// For debugging/tests: Use instead of Close to remove created files and release resources
-	// Clean() error
 }
 
 // A smallest-to-largest Node iterator
@@ -72,7 +76,7 @@ type CompactionController[K cmp.Ordered, V any] interface {
 
 // Creates directory if it does not exist.
 func mkDir(filename string) error {
-	slog.Info("File Creation", "type", "dir", "name", filename)
+	slog.Debug("File Creation", "type", "dir", "name", filename)
 	_, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return os.MkdirAll(filename, 0777)

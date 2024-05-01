@@ -2,7 +2,8 @@ package lsm_tree
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/gob"
+	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -75,45 +76,88 @@ func (l *Level[K, V]) Clear() {
 	l.mut.Unlock()
 }
 
-func remove[T any](slice []T, i int) []T {
-	return append(slice[:i], slice[i+1:]...)
+type ManifestOp int
+
+const (
+	ADD ManifestOp = iota
+	REMOVE
+	CLEAR
+)
+
+type ManifestEntry[K cmp.Ordered, V any] struct {
+	Op    ManifestOp
+	Level int
+	Table *SSTable[K, V]
 }
 
-func insertAt[T any](slice []T, i int, val T) []T {
-	if i >= len(slice) {
-		return append(slice, val)
+func (entry *ManifestEntry[K, V]) Apply(level *Level[K, V]) {
+	switch entry.Op {
+	case ADD:
+		level.Add(entry.Table)
+	case REMOVE:
+		level.Remove(entry.Table)
+	case CLEAR:
+		level.Clear()
 	}
-	slice = append(slice[:i+1], slice[i:]...)
-	slice[i] = val
-	return slice
 }
-
-// type Manifest[K cmp.Ordered, V any] [NUM_LEVELS]*Level[K, V]
 
 type Manifest[K cmp.Ordered, V any] struct {
-	Levels []*Level[K, V]
-	Path   string
+	Levels  []*Level[K, V] // in-memory representation of levels
+	Path    string         // path to manifest
+	encoder *gob.Encoder
+	file    *os.File
 }
 
-// Writes manifest to p. If p is nil, writes to manifestPath
-func (man *Manifest[K, V]) Persist() error {
-	assert(len(man.Levels) == NUM_LEVELS)
-	assert(man != nil)
+func (m *Manifest[K, V]) AddTable(table *SSTable[K, V], level int) error {
+	m.Levels[level].Add(table)
+	err := m.encoder.Encode(&ManifestEntry[K, V]{Op: ADD, Table: table, Level: level})
+	if err != nil {
+		return err
+	}
+	return m.file.Sync()
+}
 
-	file, err := os.OpenFile(man.Path, os.O_CREATE|os.O_RDWR, 0777)
+func (m *Manifest[K, V]) RemoveTable(table *SSTable[K, V], level int) error {
+	m.Levels[level].Remove(table)
+	err := m.encoder.Encode(&ManifestEntry[K, V]{Op: REMOVE, Table: table, Level: level})
 	if err != nil {
 		return err
 	}
-	err = file.Truncate(0)
+	return m.file.Sync()
+}
+
+func (m *Manifest[K, V]) ClearLevel(level int) error {
+	m.Levels[level].Clear()
+	err := m.encoder.Encode(&ManifestEntry[K, V]{Op: CLEAR, Table: nil, Level: level})
 	if err != nil {
 		return err
 	}
-	_, err = file.Seek(0, 0)
+	return m.file.Sync()
+}
+
+func (m *Manifest[K, V]) Close() error {
+	return m.file.Close()
+}
+
+func (m *Manifest[K, V]) Replay() error {
+	file, err := os.Open(m.Path)
+	defer file.Close()
 	if err != nil {
 		return err
 	}
-	encoder := json.NewEncoder(file)
-	return encoder.Encode(man.Levels)
+	decoder := gob.NewDecoder(file)
+
+	for {
+		var entry ManifestEntry[K, V]
+		if err := decoder.Decode(&entry); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		entry.Apply(m.Levels[entry.Level])
+	}
+	return nil
 }
 
 type ManifestOpts struct {
@@ -124,38 +168,25 @@ type ManifestOpts struct {
 
 // Create new manifest
 func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], error) {
-	_, err := os.Stat(opts.Path)
+	var manifest *Manifest[K, V]
+	file, err := os.OpenFile(opts.Path, os.O_RDWR|os.O_CREATE, 0777)
 	if err != nil {
-		if os.IsNotExist(err) {
-			manifest := &Manifest[K, V]{
-				Path:   opts.Path,
-				Levels: make([]*Level[K, V], opts.Num_levels),
-			}
-
-			assert(len(manifest.Levels) == opts.Num_levels)
-
-			for levelNumber := 0; levelNumber < opts.Num_levels; levelNumber++ {
-				multiplier := math.Pow(10, float64(levelNumber))
-				manifest.Levels[levelNumber] = &Level[K, V]{
-					Number:  levelNumber,
-					Size:    0,
-					MaxSize: opts.Level0_max_size * int64(multiplier),
-				}
-			}
-			return manifest, nil
+		return nil, err
+	}
+	manifest = &Manifest[K, V]{
+		Path:    opts.Path,
+		Levels:  make([]*Level[K, V], opts.Num_levels),
+		encoder: gob.NewEncoder(file),
+		file:    file,
+	}
+	for levelNumber := 0; levelNumber < opts.Num_levels; levelNumber++ {
+		multiplier := math.Pow(10, float64(levelNumber))
+		manifest.Levels[levelNumber] = &Level[K, V]{
+			Number:  levelNumber,
+			Size:    0,
+			MaxSize: opts.Level0_max_size * int64(multiplier),
 		}
-		return nil, err
 	}
-	return loadManifest[K, V](opts.Path)
-}
-
-func loadManifest[K cmp.Ordered, V any](p string) (*Manifest[K, V], error) {
-	file, err := os.Open(p)
-	if err != nil {
-		return nil, err
-	}
-	manifest := &Manifest[K, V]{}
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&manifest.Levels)
+	err = manifest.Replay()
 	return manifest, err
 }

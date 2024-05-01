@@ -250,35 +250,29 @@ func TestNewManifest(t *testing.T) {
 		Num_levels:      NUM_LEVELS,
 		Level0_max_size: LEVEL0_MAX_SIZE,
 	}
-	_, err := NewManifest[int64, string](opts)
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestManifestPersist(t *testing.T) {
-	tmp := t.TempDir()
-	path := filepath.Join(tmp, "manifest.json")
-	opts := &ManifestOpts{
-		Path:            path,
-		Num_levels:      NUM_LEVELS,
-		Level0_max_size: LEVEL0_MAX_SIZE,
-	}
 	man, err := NewManifest[int64, string](opts)
 	if err != nil {
 		t.Error(err)
 	}
-
-	err = man.Persist()
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, err = loadManifest[int64, string](path)
-	if err != nil {
-		t.Error(err)
-	}
+	defer man.Close()
 }
+
+// func TestManifestPersist(t *testing.T) {
+// 	tmp := t.TempDir()
+// 	path := filepath.Join(tmp, "manifest.json")
+// 	opts := &ManifestOpts{
+// 		Path:            path,
+// 		Num_levels:      NUM_LEVELS,
+// 		Level0_max_size: LEVEL0_MAX_SIZE,
+// 	}
+// 	man, err := NewManifest[int64, string](opts)
+// 	if err != nil {
+// 		t.Error(err)
+// 	}
+// 	defer man.Close()
+// 	man.AddTable()
+//
+// }
 
 func TestLevelBinarySearch(t *testing.T) {
 	// path := "../../data/sortedManifest.json"

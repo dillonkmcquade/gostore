@@ -2,7 +2,6 @@ package lsm_tree
 
 import (
 	"cmp"
-	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -49,7 +48,7 @@ type LSMOpts struct {
 //			max_size: 20000,
 //		},
 //		ManifestOpts: &ManifestOpts{
-//			Path:            filepath.Join(gostorepath, "manifest.json"),
+//			Path:            filepath.Join(gostorepath, "manifest.dat"),
 //			Num_levels:      4,
 //			Level0_max_size: 300,
 //		},
@@ -71,7 +70,7 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 			Max_size: 20000,
 		},
 		ManifestOpts: &ManifestOpts{
-			Path:            filepath.Join(gostorepath, "manifest.json"),
+			Path:            filepath.Join(gostorepath, "manifest.dat"),
 			Num_levels:      4,
 			Level0_max_size: 300,
 		},
@@ -97,7 +96,7 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 //			max_size: 1000,
 //		},
 //		ManifestOpts: &ManifestOpts{
-//			Path:            filepath.Join(gostorepath, "manifest.json"),
+//			Path:            filepath.Join(gostorepath, "manifest.dat"),
 //			Num_levels:      4,
 //			Level0_max_size: 1,
 //		},
@@ -119,7 +118,7 @@ func NewTestLSMOpts(gostorepath string) *LSMOpts {
 			Max_size: 1000,
 		},
 		ManifestOpts: &ManifestOpts{
-			Path:            filepath.Join(gostorepath, "manifest.json"),
+			Path:            filepath.Join(gostorepath, "manifest.dat"),
 			Num_levels:      4,
 			Level0_max_size: 539375,
 		},
@@ -151,8 +150,8 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 
 	// DATA LAYOUT
 	manifest, err := NewManifest[K, V](opts.ManifestOpts)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		log.Fatalf("error loading or creating manifest: %v", err)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// COMPACTION STRATEGY
@@ -204,11 +203,7 @@ func (store *GoStore[K, V]) flush() {
 	store.memTable.Clear()
 	store.mut.Unlock()
 
-	store.manifest.Levels[0].Add(snapshot)
-	err = store.manifest.Persist()
-	if err != nil {
-		panic(err)
-	}
+	store.manifest.AddTable(snapshot, 0)
 
 	store.compaction.Compact(store.manifest)
 }

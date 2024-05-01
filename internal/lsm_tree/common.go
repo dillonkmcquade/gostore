@@ -90,3 +90,16 @@ func assert(stmt bool) {
 		panic(fmt.Sprintf("Failed assert: %v", stmt))
 	}
 }
+
+func remove[T any](slice []T, i int) []T {
+	return append(slice[:i], slice[i+1:]...)
+}
+
+func insertAt[T any](slice []T, i int, val T) []T {
+	if i >= len(slice) {
+		return append(slice, val)
+	}
+	slice = append(slice[:i+1], slice[i:]...)
+	slice[i] = val
+	return slice
+}

@@ -104,7 +104,10 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 						if err != nil {
 							panic(err)
 						}
-						manifest.Levels[1].Add(tbl)
+						err = manifest.AddTable(tbl, 1)
+						if err != nil {
+							slog.Error("error", "cause", err)
+						}
 						wg.Done()
 					}(splitTable)
 				}
@@ -137,8 +140,8 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 					table.Name = newLocation
 
 					// Update manifest
-					manifest.Levels[i+1].Add(table)
-					manifest.Levels[i].Remove(table)
+					manifest.AddTable(table, i+1)
+					manifest.RemoveTable(table, i)
 					return
 				}
 
@@ -153,18 +156,28 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 					slog.Debug("Sync", "level", level.Number+1, "filename", splitTable.Name)
 					_, err := splitTable.Sync()
 					if err != nil {
+						slog.Error("error", "cause", err)
 						panic(err)
 					}
-					manifest.Levels[i+1].Add(splitTable)
+					err = manifest.AddTable(splitTable, i+1)
+					if err != nil {
+						slog.Error("error", "cause", err)
+					}
 				}
 
 				// Cleanup tables from lowerlevel
 				for _, overlapping_table := range overlaps {
-					manifest.Levels[i+1].Remove(overlapping_table)
+					err := manifest.RemoveTable(overlapping_table, i+1)
+					if err != nil {
+						slog.Error("error", "cause", err)
+					}
 				}
 
 				// Cleanup table from upper level
-				level.Remove(table)
+				err := manifest.RemoveTable(table, i)
+				if err != nil {
+					slog.Error("error", "cause", err)
+				}
 			}
 		}
 	}

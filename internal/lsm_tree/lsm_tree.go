@@ -189,9 +189,9 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 }
 
 // Write memTable to disk as SSTable
-func (self *GoStore[K, V]) flush() {
+func (store *GoStore[K, V]) flush() {
 	// create sstable
-	snapshot := self.memTable.Snapshot(self.levelPaths[0])
+	snapshot := store.memTable.Snapshot(store.levelPaths[0])
 	slog.Debug("Flush", "size", len(snapshot.Entries), "filename", snapshot.Name)
 
 	// save to file
@@ -201,46 +201,46 @@ func (self *GoStore[K, V]) flush() {
 	}
 
 	// Discard memTable & write-ahead log
-	self.memTable.Clear()
-	self.mut.Unlock()
+	store.memTable.Clear()
+	store.mut.Unlock()
 
-	self.manifest.Levels[0].Add(snapshot)
-	// err = self.manifest.Persist()
-	// if err != nil {
-	// 	panic(err)
-	// }
+	store.manifest.Levels[0].Add(snapshot)
+	err = store.manifest.Persist()
+	if err != nil {
+		panic(err)
+	}
 
-	self.compaction.Compact(self.manifest)
+	store.compaction.Compact(store.manifest)
 }
 
 // Write the Key-Value pair to the memtable
-func (self *GoStore[K, V]) Write(key K, val V) error {
+func (store *GoStore[K, V]) Write(key K, val V) error {
 	// Write to memTable
-	self.mut.Lock()
-	self.memTable.Put(key, val)
-	self.bloom.Add(key)
-	if self.memTable.ExceedsSize() {
-		self.flush()
+	store.mut.Lock()
+	store.memTable.Put(key, val)
+	store.bloom.Add(key)
+	if store.memTable.ExceedsSize() {
+		store.flush()
 		return nil
 	}
-	self.mut.Unlock()
+	store.mut.Unlock()
 	return nil
 }
 
 // Read the value from the given key. Will return error if value is not found.
-func (self *GoStore[K, V]) Read(key K) (V, error) {
-	self.mut.RLock()
-	defer self.mut.RUnlock()
-	if !self.bloom.Has(key) {
+func (store *GoStore[K, V]) Read(key K) (V, error) {
+	store.mut.RLock()
+	defer store.mut.RUnlock()
+	if !store.bloom.Has(key) {
 		return SSTableEntry[K, V]{}.Value, ErrNotFound
 	}
 
 	// Read from memory
-	if val, ok := self.memTable.Get(key); ok {
+	if val, ok := store.memTable.Get(key); ok {
 		return val, nil
 	}
 
-	level0 := self.manifest.Levels[0]
+	level0 := store.manifest.Levels[0]
 
 	// Check unsorted level 0
 	for i := len(level0.Tables) - 1; i >= 0; i-- {
@@ -248,7 +248,7 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 		err := tbl.Open()
 		if err != nil {
 			slog.Error("File I/O", "cause", err)
-			return Node[K, V]{}.Value, FileIOErr
+			return Node[K, V]{}.Value, ErrFileIO
 		}
 		defer tbl.Close()
 
@@ -259,7 +259,7 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 	}
 
 	// binary search sorted levels 1:3
-	for _, level := range self.manifest.Levels[1:] {
+	for _, level := range store.manifest.Levels[1:] {
 		slog.Debug("Reading", "level", level.Number, "key", key, "#tables", len(level.Tables))
 		if i, found := level.BinarySearch(key); found {
 			err := level.Tables[i].Open()
@@ -277,16 +277,16 @@ func (self *GoStore[K, V]) Read(key K) (V, error) {
 }
 
 // Delete a key from the DB
-func (self *GoStore[K, V]) Delete(key K) error {
-	if self.bloom.Has(key) {
-		self.memTable.Delete(key)
-		self.bloom.Remove(key)
+func (store *GoStore[K, V]) Delete(key K) error {
+	if store.bloom.Has(key) {
+		store.memTable.Delete(key)
+		store.bloom.Remove(key)
 		return nil
 	}
 	return ErrNotFound
 }
 
 // Close closes all associated resources
-func (self *GoStore[K, V]) Close() error {
-	return self.memTable.Close()
+func (store *GoStore[K, V]) Close() error {
+	return store.memTable.Close()
 }

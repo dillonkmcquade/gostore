@@ -18,8 +18,8 @@ const (
 )
 
 var (
-	ErrNotFound = errors.New("Not found")
-	FileIOErr   = errors.New("Error opening table")
+	ErrNotFound = errors.New("not found")
+	ErrFileIO   = errors.New("error opening table")
 )
 
 type LSMTree[K cmp.Ordered, V any] interface {

@@ -15,17 +15,22 @@ type GoStoreRPC struct {
 }
 
 func New() *GoStoreRPC {
-	return &GoStoreRPC{tree: lsm.New[uint64, []byte](20)}
+	opts := &lsm.LSMOpts{
+		BloomOpts:    &lsm.BloomFilterOpts{},
+		ManifestOpts: &lsm.ManifestOpts{},
+		MemTableOpts: &lsm.GoStoreMemTableOpts{},
+	}
+	return &GoStoreRPC{tree: lsm.New[uint64, []byte](opts)}
 }
 
-func (self *GoStoreRPC) Close() {
-	self.tree.Close()
+func (r *GoStoreRPC) Close() {
+	r.tree.Close()
 }
 
-func (self *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
+func (r *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	done := make(chan error, 1)
 
-	go func() { done <- self.tree.Write(in.Key, in.Payload) }()
+	go func() { done <- r.tree.Write(in.Key, in.Payload) }()
 
 	select {
 	case err := <-done:
@@ -49,11 +54,11 @@ type ReadResult struct {
 	Val []byte
 }
 
-func (self *GoStoreRPC) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadReply, error) {
+func (r *GoStoreRPC) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadReply, error) {
 	done := make(chan *ReadResult, 1)
 
 	go func() {
-		val, err := self.tree.Read(in.Key)
+		val, err := r.tree.Read(in.Key)
 		done <- &ReadResult{Err: err, Val: val}
 	}()
 
@@ -74,9 +79,9 @@ func (self *GoStoreRPC) Read(ctx context.Context, in *pb.ReadRequest) (*pb.ReadR
 	return nil, nil
 }
 
-func (self *GoStoreRPC) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.WriteReply, error) {
+func (r *GoStoreRPC) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.WriteReply, error) {
 	done := make(chan error, 1)
-	go func() { done <- self.tree.Delete(in.Key) }()
+	go func() { done <- r.tree.Delete(in.Key) }()
 	select {
 	case err := <-done:
 		return &pb.WriteReply{Status: int32(codes.OK), Message: err.Error()}, nil
@@ -92,9 +97,9 @@ func (self *GoStoreRPC) Delete(ctx context.Context, in *pb.ReadRequest) (*pb.Wri
 	return nil, nil
 }
 
-func (self *GoStoreRPC) Update(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
+func (r *GoStoreRPC) Update(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {
 	done := make(chan error, 1)
-	go func() { done <- self.tree.Write(in.Key, in.Payload) }()
+	go func() { done <- r.tree.Write(in.Key, in.Payload) }()
 
 	select {
 	case err := <-done:

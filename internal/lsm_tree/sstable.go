@@ -107,25 +107,3 @@ func (table *SSTable[K, V]) Search(key K) (V, bool) {
 	}
 	return SSTableEntry[K, V]{}.Value, false
 }
-
-// DEPRECATED
-//
-// readSSTableFromFile reads an SSTable file and returns its contents as an SSTable.
-func readSSTableFromFile[K cmp.Ordered, V any](filename string) (*SSTable[K, V], error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var entries []*SSTableEntry[K, V]
-	decoder := gob.NewDecoder(file)
-	for {
-		var entry SSTableEntry[K, V]
-		if err := decoder.Decode(&entry); err != nil {
-			break
-		}
-		entries = append(entries, &entry)
-	}
-	return &SSTable[K, V]{Entries: entries, Name: filename, file: file}, err
-}

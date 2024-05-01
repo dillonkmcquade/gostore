@@ -64,10 +64,6 @@ func (rbt *RedBlackTree[K, V]) Iterator() Iterator[K, V] {
 	return newRBTIterator(rbt.root, rbt.Size())
 }
 
-func newRedBlackTree[K cmp.Ordered, V any]() *RedBlackTree[K, V] {
-	return &RedBlackTree[K, V]{}
-}
-
 func (rbt *RedBlackTree[K, V]) Size() uint {
 	return rbt.size
 }
@@ -75,21 +71,6 @@ func (rbt *RedBlackTree[K, V]) Size() uint {
 func (rbt *RedBlackTree[K, V]) Clear() {
 	rbt.root = nil
 	rbt.size = 0
-}
-
-// For debugging
-func (rbt *RedBlackTree[K, V]) printTree(root *Node[K, V], space int) {
-	if root != nil {
-		space = space + 10
-		rbt.printTree(root.right, space)
-		fmt.Println("")
-		for i := 10; i < space; i++ {
-			fmt.Printf(" ")
-		}
-		fmt.Printf("%v", root.isBlack) // Print colors or keys
-		fmt.Println("")
-		rbt.printTree(root.left, space)
-	}
 }
 
 // Insert or update value at key

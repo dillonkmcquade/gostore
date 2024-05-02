@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 )
 
@@ -76,7 +75,7 @@ type CompactionController[K cmp.Ordered, V any] interface {
 
 // Creates directory if it does not exist.
 func mkDir(filename string) error {
-	slog.Debug("File Creation", "type", "dir", "name", filename)
+	logFileIO[int, any](CREATE, DIR, filename)
 	_, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return os.MkdirAll(filename, 0750)

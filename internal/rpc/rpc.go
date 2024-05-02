@@ -16,7 +16,6 @@ type GoStoreRPC struct {
 
 func New() *GoStoreRPC {
 	opts := &lsm.LSMOpts{
-		BloomOpts:    &lsm.BloomFilterOpts{},
 		ManifestOpts: &lsm.ManifestOpts{},
 		MemTableOpts: &lsm.GoStoreMemTableOpts{},
 	}

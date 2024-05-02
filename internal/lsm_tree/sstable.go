@@ -3,7 +3,6 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
-	"log/slog"
 	"os"
 	"sort"
 	"sync"
@@ -20,11 +19,12 @@ type SSTableEntry[K cmp.Ordered, V any] struct {
 // SSTable represents a Sorted String Table. Entries are sorted by key.
 type SSTable[K cmp.Ordered, V any] struct {
 	Entries   []*SSTableEntry[K, V]
+	Filter    *BloomFilter[K]
 	file      *os.File
+	Size      int64     // Size of file in bytes
 	Name      string    // full filename
 	First     K         // First key in range
 	Last      K         // Last key in range
-	Size      int64     // Size of file in bytes
 	CreatedOn time.Time // Timestamp
 
 	mut sync.Mutex
@@ -37,36 +37,41 @@ func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
 
 // Sync flushes all in-memory entries to stable storage
 func (table *SSTable[K, V]) Sync() (int64, error) {
-	file, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0600)
+	tableFile, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
+	defer tableFile.Close()
 
-	slog.Debug("File Creation", "type", "SSTable", "name", table.Name)
+	logFileIO[K, V](CREATE, SSTABLE, table)
 
-	encoder := gob.NewEncoder(file)
+	encoder := gob.NewEncoder(tableFile)
 	err = encoder.Encode(table.Entries)
 	if err != nil {
 		return 0, err
 	}
-	err = file.Sync()
+	err = tableFile.Sync()
 	if err != nil {
 		return 0, err
 	}
 	table.Entries = []*SSTableEntry[K, V]{}
-	table.file = file
-
-	fd, err := file.Stat()
+	table.file = tableFile
+	fd, err := tableFile.Stat()
 	if err != nil {
 		return 0, err
 	}
-
 	size := fd.Size()
-
 	table.Size = size
 
-	return size, nil
+	return size, err
+}
+
+func (table *SSTable[K, V]) SaveFilter() error {
+	return table.Filter.Save()
+}
+
+func (table *SSTable[K, V]) LoadFilter() error {
+	return table.Filter.Load()
 }
 
 // Read entries into memory & locks table

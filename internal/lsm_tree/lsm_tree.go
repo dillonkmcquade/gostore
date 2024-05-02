@@ -19,9 +19,6 @@ type GoStore[K cmp.Ordered, V any] struct {
 	// Configurable interface for compaction and compaction trigger
 	compaction CompactionController[K, V]
 
-	// Verify if the key exists in the DB quickly
-	bloom *BloomFilter[K]
-
 	// Paths to the level directories. Each index corresponds to a level.
 	levelPaths []string
 
@@ -29,23 +26,20 @@ type GoStore[K cmp.Ordered, V any] struct {
 }
 
 type LSMOpts struct {
-	BloomOpts        *BloomFilterOpts
 	MemTableOpts     *GoStoreMemTableOpts
 	ManifestOpts     *ManifestOpts
 	GoStorePath      string
-	BloomPath        string
 	LevelPaths       []string
 	SSTable_max_size int
 }
 
 //	return &LSMOpts{
-//		BloomOpts: &BloomFilterOpts{
-//			size:         960000,
-//			numHashFuncs: 7,
-//		},
 //		MemTableOpts: &GoStoreMemTableOpts{
-//			walPath:  filepath.Join(gostorepath, "wal.dat"),
-//			max_size: 20000,
+//			walPath:          filepath.Join(gostorepath, generateUniqueWALName()),
+//			Batch_write_size: 10,
+//			Max_size:         20000,
+//			Bloom_size:       10000,
+//			BloomPath:        filepath.Join(gostorepath, "filters"),
 //		},
 //		ManifestOpts: &ManifestOpts{
 //			Path:            filepath.Join(gostorepath, "manifest.dat"),
@@ -53,30 +47,27 @@ type LSMOpts struct {
 //			Level0_max_size: 300,
 //		},
 //		GoStorePath: gostorepath,
-//		BloomPath:   filepath.Join(gostorepath, "bloom.dat"),
 //		LevelPaths: []string{
 //			filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
 //			filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
 //		},
+//		SSTable_max_size: 40_000_000,
 //	}
 func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 	return &LSMOpts{
-		BloomOpts: &BloomFilterOpts{
-			Size:         960000,
-			NumHashFuncs: 7,
-		},
 		MemTableOpts: &GoStoreMemTableOpts{
-			walPath:          filepath.Join(gostorepath, generateUniqueWALName()),
+			walPath:          filepath.Join(gostorepath, "WAL.log"),
 			Batch_write_size: 10,
 			Max_size:         20000,
+			Bloom_size:       10000,
+			BloomPath:        filepath.Join(gostorepath, "filters"),
 		},
 		ManifestOpts: &ManifestOpts{
-			Path:            filepath.Join(gostorepath, "manifest.dat"),
+			Path:            filepath.Join(gostorepath, "manifest.log"),
 			Num_levels:      4,
 			Level0_max_size: 300,
 		},
 		GoStorePath: gostorepath,
-		BloomPath:   filepath.Join(gostorepath, "bloom.dat"),
 		LevelPaths: []string{
 			filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
 			filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
@@ -88,44 +79,40 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 // Smaller defaults used for testing
 //
 //	return &LSMOpts{
-//		BloomOpts: &BloomFilterOpts{
-//			size:         1000,
-//			numHashFuncs: 1,
-//		},
 //		MemTableOpts: &GoStoreMemTableOpts{
-//			walPath:  filepath.Join(gostorepath, "wal.dat"),
-//			max_size: 1000,
+//			walPath:          filepath.Join(gostorepath, generateUniqueWALName()),
+//			Batch_write_size: 100,
+//			Max_size:         1000,
+//			Bloom_size:       10000,
+//			BloomPath:        filepath.Join(gostorepath, "filters"),
 //		},
 //		ManifestOpts: &ManifestOpts{
 //			Path:            filepath.Join(gostorepath, "manifest.dat"),
 //			Num_levels:      4,
-//			Level0_max_size: 1,
+//			Level0_max_size: 539375,
 //		},
 //		GoStorePath: gostorepath,
-//		BloomPath:   filepath.Join(gostorepath, "bloom.dat"),
 //		LevelPaths: []string{
 //			filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
 //			filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
 //		},
+//		SSTable_max_size: 1000,
 //	}
 func NewTestLSMOpts(gostorepath string) *LSMOpts {
 	return &LSMOpts{
-		BloomOpts: &BloomFilterOpts{
-			Size:         100000,
-			NumHashFuncs: 3,
-		},
 		MemTableOpts: &GoStoreMemTableOpts{
-			walPath:          filepath.Join(gostorepath, generateUniqueWALName()),
-			Batch_write_size: 10,
+			walPath:          filepath.Join(gostorepath, "WAL.log"),
+			Batch_write_size: 100,
 			Max_size:         1000,
+			Bloom_size:       10000,
+			BloomPath:        filepath.Join(gostorepath, "filters"),
 		},
 		ManifestOpts: &ManifestOpts{
-			Path:            filepath.Join(gostorepath, "manifest.dat"),
+			Path:            filepath.Join(gostorepath, "manifest.log"),
 			Num_levels:      4,
 			Level0_max_size: 539375,
 		},
 		GoStorePath: gostorepath,
-		BloomPath:   filepath.Join(gostorepath, "bloom.dat"),
 		LevelPaths: []string{
 			filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
 			filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
@@ -141,12 +128,21 @@ func createAppFiles(opts *LSMOpts) {
 			log.Fatalf("error while creating directory %v: %v", dir, err)
 		}
 	}
+	err := mkDir(opts.MemTableOpts.BloomPath)
+	if err != nil {
+		log.Fatalf("error while creating directory %v: %v", opts.MemTableOpts.BloomPath, err)
+	}
 }
 
 // Creates a new LSMTree. Creates application directory if it does not exist.
 //
 // ***Will exit with non-zero status if error is returned during any of the initialization steps.
 func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Panic while closing GoStore, recovered")
+		}
+	}()
 	// Create application directories
 	createAppFiles(opts)
 
@@ -157,18 +153,7 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 	}
 
 	// COMPACTION STRATEGY
-	comp := &CompactionImpl[K, V]{LevelPaths: opts.LevelPaths, SSTable_max_size: opts.SSTable_max_size}
-
-	// BLOOMFILTER
-	var bloom *BloomFilter[K]
-	bloom, err = loadBloomFromFile[K](opts.BloomPath)
-	if err != nil {
-		if _, ok := err.(*os.PathError); ok {
-			bloom = NewBloomFilter[K](opts.BloomOpts)
-		} else {
-			log.Fatal(err)
-		}
-	}
+	comp := &CompactionImpl[K, V]{LevelPaths: opts.LevelPaths, SSTable_max_size: opts.SSTable_max_size, BloomPath: opts.MemTableOpts.BloomPath}
 
 	// MEMTABLE
 	memtable, err := NewGostoreMemTable[K, V](opts.MemTableOpts)
@@ -180,13 +165,15 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 			slog.Error(e.Error())
 		case *os.PathError:
 			// Error opening file. Should have log.Fatal'd on WAL creation if file could not be created
+			logError(e)
 			break
 		default:
-			log.Fatalf("error on WAL replay: %v", err)
+			logError(err)
+			os.Exit(1)
 		}
 	}
 
-	return &GoStore[K, V]{memTable: memtable, bloom: bloom, manifest: manifest, compaction: comp, levelPaths: opts.LevelPaths}
+	return &GoStore[K, V]{memTable: memtable, manifest: manifest, compaction: comp, levelPaths: opts.LevelPaths}
 }
 
 // Write memTable to disk as SSTable
@@ -200,24 +187,24 @@ func (store *GoStore[K, V]) flush() {
 	if err != nil {
 		panic(err)
 	}
+	err = snapshot.SaveFilter()
+	if err != nil {
+		panic(err)
+	}
 
 	// Discard memTable & write-ahead log
 	store.memTable.Clear()
 	store.mut.Unlock()
-
 	store.manifest.AddTable(snapshot, 0)
-
 	store.compaction.Compact(store.manifest)
 }
 
 // Write the Key-Value pair to the memtable
 func (store *GoStore[K, V]) Write(key K, val V) error {
-	// Write to memTable
 	store.mut.Lock()
 	store.memTable.Put(key, val)
-	store.bloom.Add(key)
 	if store.memTable.ExceedsSize() {
-		store.flush()
+		store.flush() // flush unlocks mutex
 		return nil
 	}
 	store.mut.Unlock()
@@ -228,11 +215,8 @@ func (store *GoStore[K, V]) Write(key K, val V) error {
 func (store *GoStore[K, V]) Read(key K) (V, error) {
 	store.mut.RLock()
 	defer store.mut.RUnlock()
-	if !store.bloom.Has(key) {
-		return SSTableEntry[K, V]{}.Value, ErrNotFound
-	}
 
-	// Read from memory
+	// Read from memtable first
 	if val, ok := store.memTable.Get(key); ok {
 		return val, nil
 	}
@@ -240,34 +224,38 @@ func (store *GoStore[K, V]) Read(key K) (V, error) {
 	level0 := store.manifest.Levels[0]
 
 	// Check unsorted level 0
+	// Last index in level0 tables is the most recent, so we read in descending order
 	for i := len(level0.Tables) - 1; i >= 0; i-- {
 		tbl := level0.Tables[i]
-		err := tbl.Open()
-		if err != nil {
-			slog.Error("File I/O", "cause", err)
-			return Node[K, V]{}.Value, ErrFileIO
-		}
-		defer tbl.Close()
 
-		if val, found := tbl.Search(key); found {
-			return val, nil
+		if tbl.Filter.Has(key) {
+			err := tbl.Open()
+			if err != nil {
+				logError(err)
+				return Node[K, V]{}.Value, ErrFileIO
+			}
+			defer tbl.Close()
+			if val, found := tbl.Search(key); found {
+				return val, nil
+			}
 		}
-
 	}
 
-	// binary search sorted levels 1:3
+	// binary search sorted levels 1:3 sequentially
 	for _, level := range store.manifest.Levels[1:] {
 		slog.Debug("Reading", "level", level.Number, "key", key, "#tables", len(level.Tables))
 		if i, found := level.BinarySearch(key); found {
-			err := level.Tables[i].Open()
-			if err != nil {
-				slog.Error("File I/O", "error", err)
-				panic(err)
+			if level.Tables[i].Filter.Has(key) {
+				err := level.Tables[i].Open()
+				if err != nil {
+					logError(err)
+					panic(err)
+				}
+				if val, found := level.Tables[i].Search(key); found {
+					return val, nil
+				}
+				defer level.Tables[i].Close()
 			}
-			if val, found := level.Tables[i].Search(key); found {
-				return val, nil
-			}
-			defer level.Tables[i].Close()
 		}
 	}
 	return Node[K, V]{}.Value, ErrNotFound
@@ -275,15 +263,11 @@ func (store *GoStore[K, V]) Read(key K) (V, error) {
 
 // Delete a key from the DB
 func (store *GoStore[K, V]) Delete(key K) error {
-	if store.bloom.Has(key) {
-		store.memTable.Delete(key)
-		store.bloom.Remove(key)
-		return nil
-	}
-	return ErrNotFound
+	store.memTable.Delete(key)
+	return nil
 }
 
 // Close closes all associated resources
 func (store *GoStore[K, V]) Close() error {
-	return store.memTable.Close()
+	return store.manifest.Close()
 }

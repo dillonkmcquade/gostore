@@ -2,9 +2,8 @@ package lsm_tree
 
 import (
 	"cmp"
-	"encoding/gob"
+	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,12 +18,14 @@ const (
 
 type WAL[K cmp.Ordered, V any] struct {
 	file             *os.File
-	encoder          *gob.Encoder
+	encoder          *json.Encoder
 	writeChan        chan *LogEntry[K, V]
 	batch_write_size int
+	entryPool        *sync.Pool
 	mut              sync.Mutex
 }
 
+// Generates a filename in the format WAL_UNIQUESTRING.dat
 func generateUniqueWALName() string {
 	uniqueString, err := generateRandomString(8)
 	if err != nil {
@@ -35,42 +36,69 @@ func generateUniqueWALName() string {
 
 // Returns a new WAL. The WAL should be closed (with Close()) once it is no longer needed to remove allocated resources.
 func newWal[K cmp.Ordered, V any](filename string, write_size int) (*WAL[K, V], error) {
+	pool := &sync.Pool{
+		New: func() any {
+			return new(LogEntry[K, V])
+		},
+	}
 	path := filepath.Clean(filename)
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
-	wal := &WAL[K, V]{file: file, encoder: gob.NewEncoder(file), writeChan: make(chan *LogEntry[K, V])}
+	wal := &WAL[K, V]{file: file, encoder: json.NewEncoder(file), writeChan: make(chan *LogEntry[K, V]), entryPool: pool, batch_write_size: write_size}
 	go wal.waitForWrites(write_size)
 	return wal, err
 }
 
+// Receives all entries over writeChan and writes a batch of log entries at a time to file
 func (self *WAL[K, V]) waitForWrites(batchSize int) {
-	batch := make([]*LogEntry[K, V], 0)
+	batch := make([]*LogEntry[K, V], batchSize)
+	defer close(self.writeChan)
+	count := 0
+	defer func() {
+		if count == 0 {
+			return
+		}
+		defer self.Close()
+		err := self.encoder.Encode(batch[:count+1])
+		if err != nil {
+			logError(err)
+		}
+		err = self.file.Sync()
+		if err != nil {
+			logError(err)
+		}
+	}()
 	for entry := range self.writeChan {
-		batch = append(batch, entry)
-		if len(batch) >= batchSize {
+		batch[count] = entry
+		count++
+		if count == batchSize {
 			self.mut.Lock()
 			err := self.encoder.Encode(batch)
 			if err != nil {
-				slog.Error("error", "cause", err)
+				logError(err)
 			}
-			batch = []*LogEntry[K, V]{}
 			err = self.file.Sync()
 			if err != nil {
-				slog.Error("error", "cause", err)
+				logError(err)
 			}
-			slog.Info("Sync", "filename", self.file.Name())
+			for _, entry := range batch {
+				self.entryPool.Put(entry)
+			}
 			self.mut.Unlock()
+			logFileIO[K, V](SYNC, WALFILE, self.file.Name())
+			count = 0
 		}
 	}
-	defer close(self.writeChan)
 }
 
 // Discards the contents of the current WAL
 func (self *WAL[K, V]) Discard() error {
+	self.mut.Lock()
 	err := self.file.Truncate(0)
 	if err != nil {
 		return err
 	}
 	_, err = self.file.Seek(0, 0)
+	self.mut.Unlock()
 	return err
 }
 
@@ -84,8 +112,13 @@ func (self *WAL[K, V]) Size() (int64, error) {
 
 // Write writes a log entry to the Write-Ahead Log.
 func (self *WAL[K, V]) Write(key K, val V) error {
-	entry := &LogEntry[K, V]{Key: key, Value: val, Operation: INSERT}
-	self.writeChan <- entry
+	entry, ok := self.entryPool.Get().(*LogEntry[K, V])
+	if ok {
+		entry.Key = key
+		entry.Value = val
+		entry.Operation = INSERT // Deletes are not written to log because they can be removed from the memtable in memory
+		self.writeChan <- entry
+	}
 	return nil
 }
 
@@ -101,12 +134,7 @@ type LogEntry[K cmp.Ordered, V any] struct {
 }
 
 func (self *LogEntry[K, V]) Apply(rbt *RedBlackTree[K, V]) {
-	switch self.Operation {
-	case INSERT:
-		rbt.Put(self.Key, self.Value)
-	case DELETE:
-		panic("Unimplemented")
-	}
+	rbt.Put(self.Key, self.Value)
 }
 
 // LogApplyErr is returned when a log entry failed to be applied to be applied.
@@ -117,5 +145,8 @@ type LogApplyErr[K cmp.Ordered, V any] struct {
 }
 
 func (l *LogApplyErr[K, V]) Error() string {
+	if l.Entry == nil {
+		return fmt.Sprintf("Log apply error: %v", l.Cause)
+	}
 	return fmt.Sprintf("Error applying log entry operation '%v' with key %v and value %v: %v", l.Entry.Operation, l.Entry.Key, l.Entry.Value, l.Cause)
 }

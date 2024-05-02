@@ -94,16 +94,16 @@ func TestLevel0Compaction(t *testing.T) {
 	})
 }
 
-func newTestLevel() *Level[int, string] {
-	sstable1 := &SSTable[int, string]{
-		Entries: []*SSTableEntry[int, string]{
+func newTestLevel() *Level[int32, string] {
+	sstable1 := &SSTable[int32, string]{
+		Entries: []*SSTableEntry[int32, string]{
 			{Operation: INSERT, Key: 1, Value: "value1"},
 			{Operation: INSERT, Key: 2, Value: "value2"},
 			{Operation: DELETE, Key: 3, Value: ""},
 		},
 	}
-	sstable2 := &SSTable[int, string]{
-		Entries: []*SSTableEntry[int, string]{
+	sstable2 := &SSTable[int32, string]{
+		Entries: []*SSTableEntry[int32, string]{
 			{Operation: INSERT, Key: 4, Value: "value3"},
 			{Operation: INSERT, Key: 5, Value: "value4"},
 			{Operation: INSERT, Key: 6, Value: "value4"},
@@ -112,9 +112,9 @@ func newTestLevel() *Level[int, string] {
 			{Operation: INSERT, Key: 9, Value: "value4"},
 		},
 	}
-	return &Level[int, string]{
+	return &Level[int32, string]{
 		Number:  0,
-		Tables:  []*SSTable[int, string]{sstable1, sstable2},
+		Tables:  []*SSTable[int32, string]{sstable1, sstable2},
 		MaxSize: 3,
 	}
 }
@@ -125,9 +125,10 @@ func TestCompactionMerge(t *testing.T) {
 	// Create some sample SSTables
 	level := newTestLevel()
 
-	c := &CompactionImpl[int, string]{
+	c := &CompactionImpl[int32, string]{
 		LevelPaths:       opts.LevelPaths,
 		SSTable_max_size: 2,
+		BloomPath:        tmp,
 	}
 
 	timestamp := time.Now()

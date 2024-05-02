@@ -1,7 +1,7 @@
 package lsm_tree
 
 import (
-	"encoding/gob"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -40,7 +40,7 @@ func TestWALDecode(t *testing.T) {
 		t.Error(err)
 	}
 	defer file.Close()
-	dec := gob.NewDecoder(file)
+	dec := json.NewDecoder(file)
 
 	var entries []*LogEntry[int, any]
 	for {

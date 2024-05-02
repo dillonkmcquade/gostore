@@ -15,7 +15,8 @@ run:
 
 clean:
 	rm --force gostore
-	rm -f ~/.gostore/*.dat
+	rm -f ~/.gostore/filters/*
+	rm -f ~/.gostore/*.log
 	rm -f ~/.gostore/l0/*
 	rm -f ~/.gostore/l1/*
 	rm -f ~/.gostore/l2/*

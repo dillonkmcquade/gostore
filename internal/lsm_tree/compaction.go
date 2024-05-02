@@ -43,6 +43,7 @@ import (
 
 type CompactionImpl[K cmp.Ordered, V any] struct {
 	LevelPaths       []string
+	BloomPath        string
 	SSTable_max_size int
 }
 
@@ -51,6 +52,7 @@ func (c *CompactionImpl[K, V]) Trigger(level *Level[K, V]) bool {
 	return level.Size >= level.MaxSize
 }
 
+// Generate a random string of n bytes
 func generateRandomString(n int) (string, error) {
 	bytes := make([]byte, n)
 	if _, err := rand.Read(bytes); err != nil {
@@ -59,12 +61,132 @@ func generateRandomString(n int) (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+// Generate a unique SSTable filename in the format TIMESTAMP_UNIQUESTRING.segment
 func generateUniqueSegmentName(time time.Time) string {
 	uniqueString, err := generateRandomString(8)
 	if err != nil {
 		panic(err)
 	}
 	return fmt.Sprintf("%v_%v.segment", time.Unix(), uniqueString)
+}
+
+// The goal of L0 compaction is to insert the unsorted collection of sorted tables into the sorted L1.
+//
+// All tables from L0 are merged->split->sync->L1
+func (c *CompactionImpl[K, V]) level_0_compact(level *Level[K, V], manifest *Manifest[K, V]) {
+	// Merge all tables
+	merged := c.merge(level.Tables...)
+
+	// Split
+	split := c.split(merged)
+	slog.Debug("split", "in", len(level.Tables), "out", len(split), "last table #entries", len(split[len(split)-1].Entries))
+
+	var wg sync.WaitGroup
+	// Write files and add to manifest
+	for _, splitTable := range split {
+		wg.Add(1)
+		go func(tbl *SSTable[K, V]) {
+			tbl.Name = filepath.Join(c.LevelPaths[1], generateUniqueSegmentName(tbl.CreatedOn))
+
+			logFileIO[K, V](SYNC, SSTABLE, tbl)
+			_, err := tbl.Sync()
+			if err != nil {
+				panic(err)
+			}
+
+			err = tbl.SaveFilter()
+			if err != nil {
+				panic(err)
+			}
+
+			err = manifest.AddTable(tbl, 1)
+			if err != nil {
+				logError(err)
+			}
+			wg.Done()
+		}(splitTable)
+	}
+
+	for _, tbl := range level.Tables {
+		wg.Add(1)
+		go func(t *SSTable[K, V]) {
+			logFileIO[K, V](FREMOVE, SSTABLE, t)
+			os.Remove(t.Name)
+			os.Remove(t.Filter.Name)
+			wg.Done()
+		}(tbl)
+	}
+	wg.Wait()
+
+	err := manifest.ClearLevel(level.Number)
+	if err != nil {
+		panic(err)
+	}
+}
+
+// Merge oldest table from upper level into overlapping lower level tables
+func (c *CompactionImpl[K, V]) lower_level_compact(level *Level[K, V], manifest *Manifest[K, V]) {
+	// Choose oldest table
+	table := findOldestTable(level.Tables)
+	// find tables in lowerlevel that overlap with table in upper level
+	overlaps := c.findOverlappingSSTables(table, manifest.Levels[level.Number+1])
+
+	// if lower level is empty, simply move the table from upper level to lower level
+	if len(overlaps) == 0 {
+		newLocation := filepath.Join(c.LevelPaths[level.Number+1], filepath.Base(table.Name))
+
+		logFileIO[K, V](RENAME, SSTABLE, table)
+
+		os.Rename(table.Name, newLocation)
+
+		table.Name = newLocation
+
+		// Update manifest
+		manifest.AddTable(table, level.Number+1)
+		manifest.RemoveTable(table, level.Number)
+		return
+	}
+
+	merged := c.merge(append(overlaps, table)...)
+
+	// Split merged table into smaller sizes
+	split := c.split(merged)
+
+	// Write files and add to manifest
+	for _, splitTable := range split {
+		splitTable.Name = filepath.Join(c.LevelPaths[level.Number+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
+
+		logFileIO[K, V](SYNC, SSTABLE, splitTable)
+
+		_, err := splitTable.Sync()
+		if err != nil {
+			logError(err)
+			panic(err)
+		}
+		err = splitTable.SaveFilter()
+		if err != nil {
+			logError(err)
+			panic(err)
+		}
+		err = manifest.AddTable(splitTable, level.Number+1)
+		if err != nil {
+			logError(err)
+		}
+	}
+
+	// Cleanup tables from lowerlevel
+	for _, overlapping_table := range overlaps {
+		err := manifest.RemoveTable(overlapping_table, level.Number+1)
+		if err != nil {
+			logError(err)
+		}
+	}
+
+	// Cleanup table from upper level
+	err := manifest.RemoveTable(table, level.Number)
+	if err != nil {
+		logError(err)
+	}
 }
 
 func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
@@ -80,104 +202,13 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 		return
 	}
 
-	for i, level := range manifest.Levels {
+	for _, level := range manifest.Levels {
 		if c.Trigger(level) {
-			// level0 compaction -> Skip finding overlaps
 			slog.Debug("Compaction", "level", level.Number)
 			if level.Number == 0 {
-				// Merge all tables
-				merged := c.merge(level.Tables...)
-
-				// Split
-				split := c.split(merged)
-				slog.Debug("split", "in", len(level.Tables), "out", len(split), "last table #entries", len(split[len(split)-1].Entries))
-
-				var wg sync.WaitGroup
-				// Write files and add to manifest
-				for _, splitTable := range split {
-					wg.Add(1)
-					go func(tbl *SSTable[K, V]) {
-						tbl.Name = filepath.Join(c.LevelPaths[1], generateUniqueSegmentName(tbl.CreatedOn))
-
-						slog.Debug("Sync", "filename", tbl.Name)
-						_, err := tbl.Sync()
-						if err != nil {
-							panic(err)
-						}
-						err = manifest.AddTable(tbl, 1)
-						if err != nil {
-							slog.Error("error", "cause", err)
-						}
-						wg.Done()
-					}(splitTable)
-				}
-
-				for _, tbl := range level.Tables {
-					wg.Add(1)
-					go func(name string) {
-						slog.Debug("Remove", "filename", name)
-						os.Remove(name)
-						wg.Done()
-					}(tbl.Name)
-				}
-				wg.Wait()
-
-				defer level.Clear()
+				c.level_0_compact(level, manifest)
 			} else {
-				// Choose oldest table
-				table := findOldestTable(level.Tables)
-				// find tables in lowerlevel that overlap with table in upper level
-				overlaps := c.findOverlappingSSTables(table, manifest.Levels[i+1])
-
-				if len(overlaps) == 0 {
-					// move upperlevel -> lowerlevel
-					newLocation := filepath.Join(c.LevelPaths[i+1], filepath.Base(table.Name))
-
-					os.Rename(table.Name, newLocation)
-
-					slog.Debug("File modification", "type", "rename", "old", table.Name, "new", newLocation)
-
-					table.Name = newLocation
-
-					// Update manifest
-					manifest.AddTable(table, i+1)
-					manifest.RemoveTable(table, i)
-					return
-				}
-
-				merged := c.merge(append(overlaps, table)...)
-
-				// Split merged table into smaller sizes
-				split := c.split(merged)
-
-				// Write files and add to manifest
-				for _, splitTable := range split {
-					splitTable.Name = filepath.Join(c.LevelPaths[i+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
-					slog.Debug("Sync", "level", level.Number+1, "filename", splitTable.Name)
-					_, err := splitTable.Sync()
-					if err != nil {
-						slog.Error("error", "cause", err)
-						panic(err)
-					}
-					err = manifest.AddTable(splitTable, i+1)
-					if err != nil {
-						slog.Error("error", "cause", err)
-					}
-				}
-
-				// Cleanup tables from lowerlevel
-				for _, overlapping_table := range overlaps {
-					err := manifest.RemoveTable(overlapping_table, i+1)
-					if err != nil {
-						slog.Error("error", "cause", err)
-					}
-				}
-
-				// Cleanup table from upper level
-				err := manifest.RemoveTable(table, i)
-				if err != nil {
-					slog.Error("error", "cause", err)
-				}
+				c.lower_level_compact(level, manifest)
 			}
 		}
 	}
@@ -215,10 +246,17 @@ func (c *CompactionImpl[K, V]) split(table *SSTable[K, V]) []*SSTable[K, V] {
 
 		timestamp := time.Now()
 		tbl := &SSTable[K, V]{
-			Entries:   table.Entries[i : lastIndex+1],
-			First:     table.Entries[i].Key,
-			Last:      table.Entries[lastIndex].Key,
+			Entries: table.Entries[i : lastIndex+1],
+			First:   table.Entries[i].Key,
+			Last:    table.Entries[lastIndex].Key,
+			Filter: NewBloomFilter[K](&BloomFilterOpts{
+				Size: uint64(offset * 10),
+				Path: c.BloomPath,
+			}),
 			CreatedOn: timestamp,
+		}
+		for _, e := range table.Entries[i : lastIndex+1] {
+			tbl.Filter.Add(e.Key)
 		}
 		tables = append(tables, tbl)
 
@@ -251,10 +289,8 @@ func (c *CompactionImpl[K, V]) merge(tables ...*SSTable[K, V]) *SSTable[K, V] {
 		}
 	}
 
-	slog.Debug("Merge", "tree size", tree.size, "# tables", len(tables))
-
 	sstable := &SSTable[K, V]{
-		Entries: make([]*SSTableEntry[K, V], 0),
+		Entries: make([]*SSTableEntry[K, V], 0, tree.Size()),
 	}
 
 	iter := tree.Iterator()

@@ -1,13 +1,12 @@
 package lsm_tree
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func TestBloomFilterAdd(t *testing.T) {
 	t.Run("Add int64", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
+		opts := &BloomFilterOpts{Size: 1000}
 		bf := NewBloomFilter[int64](opts)
 
 		integers := []int64{42, 123, 987}
@@ -30,7 +29,7 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add int32", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
+		opts := &BloomFilterOpts{Size: 100}
 		bf := NewBloomFilter[int32](opts)
 
 		integers := []int32{42, 123, 987}
@@ -53,7 +52,7 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add string", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
+		opts := &BloomFilterOpts{Size: 100}
 		filter := NewBloomFilter[string](opts)
 
 		strings := []string{"hello", "world", "bloom"}
@@ -76,91 +75,59 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add 15000", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100000, NumHashFuncs: 7}
-		filter := NewBloomFilter[int](opts)
+		opts := &BloomFilterOpts{Size: 100000}
+		filter := NewBloomFilter[int64](opts)
 
 		for i := 0; i < 15000; i++ {
-			filter.Add(i)
+			filter.Add(int64(i))
 		}
 
 		for i := 0; i < 15000; i++ {
-			if !filter.Has(i) {
+			if !filter.Has(int64(i)) {
 				t.Errorf("Should contain %v", i)
 			}
 		}
 	})
 
 	t.Run("Add 30000", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 300000, NumHashFuncs: 7}
-		filter := NewBloomFilter[int](opts)
+		opts := &BloomFilterOpts{Size: 300000}
+		filter := NewBloomFilter[int64](opts)
 
 		for i := 0; i < 30000; i++ {
-			filter.Add(i)
+			filter.Add(int64(i))
 		}
 
 		for i := 0; i < 30000; i++ {
-			if !filter.Has(i) {
+			if !filter.Has(int64(i)) {
 				t.Errorf("Should contain %v", i)
 			}
 		}
 	})
 }
 
-func TestBloomFilterRemove(t *testing.T) {
-	opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
-	filter := NewBloomFilter[string](opts)
-
-	strings := []string{"hello", "world", "bloom"}
-	for _, str := range strings {
-		filter.Add(str)
-	}
-
-	for _, string := range strings {
-		filter.Remove(string)
-		if filter.Has(string) {
-			t.Errorf("Bloom filter should not contain %v", string)
-		}
-
-	}
-}
-
 func TestBloomIO(t *testing.T) {
-	t.Run("Load bloom from file", func(t *testing.T) {
-		filter, err := loadBloomFromFile[int]("../../data/bloom.dat")
-		if err != nil {
-			t.Errorf("Failed to load bloom from file: %s", err)
-		}
-
-		if !filter.Has(10) {
-			t.Error("Should contain 10")
-		}
-	})
-
 	t.Run("Save bloom to file", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100, NumHashFuncs: 3}
-		filter := NewBloomFilter[string](opts)
+		tmp := t.TempDir()
+		opts := &BloomFilterOpts{Size: 1000, Path: tmp}
+		filter := NewBloomFilter[int64](opts)
 
-		strings := []string{"hello", "world", "bloom"}
-		for _, str := range strings {
-			filter.Add(str)
+		keys := []int64{50, 70, 90}
+		for _, key := range keys {
+			filter.Add(key)
 		}
 
-		tmpDir := t.TempDir()
-		filename := filepath.Join(tmpDir, "bloom.dat")
-		err := filter.Save(filename)
+		err := filter.Save()
 		if err != nil {
 			t.Errorf("error saving filter: %s", err)
 		}
 
-		loadedFilter, err := loadBloomFromFile[string](filename)
-		if len(loadedFilter.HashFuncs) == 0 {
-			t.Error("Should not be zero")
-		}
+		filter.bitset = nil
+		err = filter.Load()
 		if err != nil {
-			t.Errorf("Error loading filter from file")
+			t.Error()
 		}
-		if !loadedFilter.Has("hello") {
-			t.Error("Should contain key hello")
+		if !filter.Has(int64(50)) {
+			t.Error("Should have key 50")
 		}
 	})
 }

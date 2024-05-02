@@ -70,17 +70,32 @@ func TestSSTableIO(t *testing.T) {
 		filename := filepath.Join(tmp, "loadtest")
 		entries := testEntries()
 		t1 := &SSTable[int64, string]{
-			Entries:   entries,
-			Name:      filename,
+			Entries: entries,
+			Name:    filename,
+			Filter: NewBloomFilter[int64](&BloomFilterOpts{
+				Size: 1000,
+				Path: tmp,
+			}),
 			First:     0,
 			Last:      100,
 			CreatedOn: time.Now(),
+		}
+		for _, entry := range entries {
+			t1.Filter.Add(entry.Key)
 		}
 		_, err := t1.Sync()
 		if err != nil {
 			t.Error(err)
 		}
-
+		err = t1.SaveFilter()
+		if err != nil {
+			t.Error(err)
+		}
+		t1.Filter.bitset = nil
+		err = t1.LoadFilter()
+		if err != nil {
+			t.Error(err)
+		}
 		err = t1.Open()
 		if err != nil {
 			t.Error(err)

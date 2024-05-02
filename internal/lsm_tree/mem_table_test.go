@@ -106,9 +106,11 @@ func TestMemTableIO(t *testing.T) {
 	wal := filepath.Join(tmp, "wal.dat")
 
 	mem, err := NewGostoreMemTable[int64, string](&GoStoreMemTableOpts{
+		Batch_write_size: 10,
 		walPath:          wal,
 		Max_size:         1000,
-		Batch_write_size: 10,
+		Bloom_size:       10000,
+		BloomPath:        tmp,
 	})
 	defer mem.Close()
 

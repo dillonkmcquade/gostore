@@ -3,11 +3,10 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
+	"fmt"
 	"io"
-	"log/slog"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 )
@@ -41,7 +40,6 @@ func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
 }
 
 func (l *Level[K, V]) Add(table *SSTable[K, V]) {
-	slog.Debug("Level modification", "type", "add", "level", l.Number, "id", filepath.Base(table.Name))
 	l.mut.Lock()
 	defer l.mut.Unlock()
 	if len(l.Tables) == 0 {
@@ -55,7 +53,6 @@ func (l *Level[K, V]) Add(table *SSTable[K, V]) {
 }
 
 func (l *Level[K, V]) Remove(table *SSTable[K, V]) {
-	slog.Debug("Level modification", "type", "remove", "level", l.Number, "id", filepath.Base(table.Name))
 	l.mut.Lock()
 	defer l.mut.Unlock()
 	assert(len(l.Tables) > 0)
@@ -119,7 +116,7 @@ func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], err
 	var manifest *Manifest[K, V]
 	file, err := os.OpenFile(opts.Path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("NewManifest: %v", err)
 	}
 	manifest = &Manifest[K, V]{
 		Path:    opts.Path,
@@ -136,33 +133,42 @@ func NewManifest[K cmp.Ordered, V any](opts *ManifestOpts) (*Manifest[K, V], err
 		}
 	}
 	err = manifest.Replay()
-	return manifest, err
+	if err != nil {
+		return nil, fmt.Errorf("NewManifest: %v", err)
+	}
+	return manifest, nil
 }
 
 func (m *Manifest[K, V]) AddTable(table *SSTable[K, V], level int) error {
 	m.Levels[level].Add(table)
-	err := m.encoder.Encode(&ManifestEntry[K, V]{Op: ADD, Table: table, Level: level})
+	entry := &ManifestEntry[K, V]{Op: ADD, Table: table, Level: level}
+	err := m.encoder.Encode(entry)
 	if err != nil {
-		return err
+		return fmt.Errorf("AddTable: %v", err)
 	}
+	logFileIO[K, V](ENCODE, MANIFEST, entry)
 	return m.file.Sync()
 }
 
 func (m *Manifest[K, V]) RemoveTable(table *SSTable[K, V], level int) error {
 	m.Levels[level].Remove(table)
-	err := m.encoder.Encode(&ManifestEntry[K, V]{Op: REMOVE, Table: table, Level: level})
+	entry := &ManifestEntry[K, V]{Op: REMOVE, Table: table, Level: level}
+	err := m.encoder.Encode(entry)
 	if err != nil {
-		return err
+		return fmt.Errorf("RemoveTable: %v", err)
 	}
+	logFileIO[K, V](ENCODE, MANIFEST, entry)
 	return m.file.Sync()
 }
 
 func (m *Manifest[K, V]) ClearLevel(level int) error {
 	m.Levels[level].Clear()
-	err := m.encoder.Encode(&ManifestEntry[K, V]{Op: CLEAR, Table: nil, Level: level})
+	entry := &ManifestEntry[K, V]{Op: CLEAR, Table: nil, Level: level}
+	err := m.encoder.Encode(entry)
 	if err != nil {
-		return err
+		return fmt.Errorf("ClearLevel: %v", err)
 	}
+	logFileIO[K, V](ENCODE, MANIFEST, entry)
 	return m.file.Sync()
 }
 
@@ -174,7 +180,7 @@ func (m *Manifest[K, V]) Replay() error {
 	file, err := os.Open(m.Path)
 	defer file.Close()
 	if err != nil {
-		return err
+		return fmt.Errorf("Manifest Replay: %v", err)
 	}
 	decoder := gob.NewDecoder(file)
 
@@ -184,9 +190,18 @@ func (m *Manifest[K, V]) Replay() error {
 			if err == io.EOF {
 				break
 			}
-			return err
+			return fmt.Errorf("Manifest Replay: %v", err)
 		}
 		entry.Apply(m.Levels[entry.Level])
+		logFileIO[K, V](DECODE, MANIFEST, entry)
+	}
+	for _, level := range m.Levels {
+		for _, tbl := range level.Tables {
+			err = tbl.LoadFilter()
+			if err != nil {
+				panic(err)
+			}
+		}
 	}
 	return nil
 }

@@ -260,27 +260,22 @@ func TestNewManifest(t *testing.T) {
 // func TestManifestPersist(t *testing.T) {
 // 	tmp := t.TempDir()
 // 	path := filepath.Join(tmp, "manifest.json")
-// 	opts := &ManifestOpts{
-// 		Path:            path,
-// 		Num_levels:      NUM_LEVELS,
-// 		Level0_max_size: LEVEL0_MAX_SIZE,
-// 	}
-// 	man, err := NewManifest[int64, string](opts)
-// 	if err != nil {
-// 		t.Error(err)
+// 	man := newTestManifest(path)
+// 	for _, level := range man.Levels {
+// 		for _, tbl := range level.Tables {
+// 			tbl.Filter = NewBloomFilter[int64](&BloomFilterOpts{
+// 				Size: 1000,
+// 				Path: tmp,
+// 			})
+// 			for _, entry := range tbl.Entries {
+// 				tbl.Filter.Add(entry.Key)
+// 			}
+// 		}
 // 	}
 // 	defer man.Close()
-// 	man.AddTable()
-//
 // }
 
 func TestLevelBinarySearch(t *testing.T) {
-	// path := "../../data/sortedManifest.json"
-	// opts := &ManifestOpts{Path: path, Num_levels: NUM_LEVELS, Level0_max_size: LEVEL0_MAX_SIZE}
-	// man, err := NewManifest[int64, string](opts)
-	// if err != nil {
-	// 	t.Error(err)
-	// }
 	tmp := t.TempDir()
 	man := newTestManifest(tmp)
 
@@ -288,31 +283,11 @@ func TestLevelBinarySearch(t *testing.T) {
 	if !found {
 		t.Error("Should be in Level")
 	}
-	// if found {
-	// 	err = man.Levels[0].Tables[i].Open()
-	// 	if err != nil {
-	// 		t.Error(err)
-	// 	}
-	// 	if _, found := man.Levels[0].Tables[i].Search(0); !found {
-	// 		t.Error("Should contain 0")
-	// 	}
-	// 	man.Levels[0].Tables[i].Close()
-	// }
 
 	_, found = man.Levels[0].BinarySearch(400)
 	if !found {
 		t.Error("Should be in Level")
 	}
-	// if found {
-	// 	err = man.Levels[0].Tables[i].Open()
-	// 	if err != nil {
-	// 		t.Error(err)
-	// 	}
-	// 	if _, found := man.Levels[0].Tables[i].Search(400); !found {
-	// 		t.Error("Should contain 400")
-	// 	}
-	// 	man.Levels[0].Tables[i].Close()
-	// }
 }
 
 func TestLevelAdd(t *testing.T) {

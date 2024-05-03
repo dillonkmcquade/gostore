@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -25,6 +26,7 @@ type BloomFilterOpts struct {
 func generateUniqueBloomName() string {
 	string, err := generateRandomString(8)
 	if err != nil {
+		slog.Error("error while generating bloom filename")
 		panic(err)
 	}
 	return fmt.Sprintf("bloom_%s.dat", string)
@@ -33,15 +35,12 @@ func generateUniqueBloomName() string {
 // NewBloomFilter creates a new Bloom filter with the specified size and number of hash functions.
 func NewBloomFilter[K cmp.Ordered](opts *BloomFilterOpts) *BloomFilter[K] {
 	gob.Register(fnv.New64a())
-	if opts.Size == 0 {
-		panic("Bloom filter size cannot be 0")
-	}
+	assert(opts.Size > 0, "Bloom filter size cannot be 0")
 	filter := &BloomFilter[K]{
 		bitset: make([]uint64, (opts.Size+63)/64),
 		Name:   filepath.Join(opts.Path, generateUniqueBloomName()),
 		Size:   opts.Size,
 	}
-	logFileIO[K, any](CREATE, BLOOMFILTER, filter.Name)
 	return filter
 }
 
@@ -49,6 +48,7 @@ func (bf *BloomFilter[K]) hashFunc(data []byte) uint64 {
 	h := fnv.New64()
 	n, err := h.Write(data)
 	if err != nil || n != len(data) {
+		slog.Error("hashFunc: error writing data to hash")
 		panic(err)
 	}
 	return h.Sum64()
@@ -67,7 +67,8 @@ func ConvertToBytes(value interface{}) ([]byte, error) {
 func (bf *BloomFilter[K]) Add(key K) {
 	b, err := ConvertToBytes(key)
 	if err != nil {
-		panic("Add: " + err.Error())
+		slog.Error("Add: error converting key to byte array", "key", key)
+		panic(err)
 	}
 	for _, hash := range bf.getHashes(b) {
 		bf.bitset[hash/64] |= 1 << (hash % 64)
@@ -82,11 +83,12 @@ func (bf *BloomFilter[K]) getHashes(data []byte) [2]uint64 {
 
 // Has tests whether a key is in the Bloom filter.
 func (bf *BloomFilter[K]) Has(key K) bool {
-	assert(bf.bitset != nil)
+	assert(bf.bitset != nil, "Bitset cannot be nil")
 
 	b, err := ConvertToBytes(key)
 	if err != nil {
-		panic("Add:" + err.Error())
+		slog.Error("Has: error converting key to byte array", "key", key)
+		panic(err)
 	}
 	for _, hash := range bf.getHashes(b) {
 		if (bf.bitset[hash/64] & (1 << (hash % 64))) == 0 {
@@ -135,41 +137,3 @@ func (bf *BloomFilter[K]) Save() error {
 	}
 	return nil
 }
-
-// func (bf *BloomFilter[K]) Remove(key K) {
-// 	b := []byte(fmt.Sprintf("%v", key))
-// 	for _, hf := range bf.HashFuncs {
-// 		hf.Reset()
-// 		hf.Write(b)
-// 		index := hf.Sum64() % uint64(len(bf.Bitset))
-// 		bf.Bitset[index] = false
-// 	}
-// }
-
-// // createHashFuncs creates a set of hash functions based on FNV-1a.
-// func createHashFuncs(numHashFuncs int) []hash.Hash64 {
-// 	hashFuncs := make([]hash.Hash64, numHashFuncs)
-// 	for i := 0; i < numHashFuncs; i++ {
-// 		hashFuncs[i] = fnv.New64a()
-// 	}
-// 	return hashFuncs
-// }
-
-// loadBloomFromFile loads the Bloom filter from a file.
-// func loadBloomFromFile[K cmp.Ordered](filename string) (*BloomFilter[K], error) {
-// 	path := filepath.Clean(filename)
-// 	file, err := os.Open(path)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer file.Close()
-//
-// 	var bf BloomFilter[K]
-// 	decoder := gob.NewDecoder(file)
-// 	if err := decoder.Decode(&bf); err != nil {
-// 		if err != io.EOF && err != io.ErrUnexpectedEOF {
-// 			return nil, err
-// 		}
-// 	}
-// 	return &bf, nil
-// }

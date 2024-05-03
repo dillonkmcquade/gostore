@@ -65,6 +65,7 @@ func generateRandomString(n int) (string, error) {
 func generateUniqueSegmentName(time time.Time) string {
 	uniqueString, err := generateRandomString(8)
 	if err != nil {
+		slog.Error("error occurred while generating random string")
 		panic(err)
 	}
 	return fmt.Sprintf("%v_%v.segment", time.Unix(), uniqueString)
@@ -79,7 +80,6 @@ func (c *CompactionImpl[K, V]) level_0_compact(level *Level[K, V], manifest *Man
 
 	// Split
 	split := c.split(merged)
-	slog.Debug("split", "in", len(level.Tables), "out", len(split), "last table #entries", len(split[len(split)-1].Entries))
 
 	var wg sync.WaitGroup
 	// Write files and add to manifest
@@ -88,20 +88,22 @@ func (c *CompactionImpl[K, V]) level_0_compact(level *Level[K, V], manifest *Man
 		go func(tbl *SSTable[K, V]) {
 			tbl.Name = filepath.Join(c.LevelPaths[1], generateUniqueSegmentName(tbl.CreatedOn))
 
-			logFileIO[K, V](SYNC, SSTABLE, tbl)
 			_, err := tbl.Sync()
 			if err != nil {
+				slog.Error("Failed to sync table", "filename", tbl.Name)
 				panic(err)
 			}
 
 			err = tbl.SaveFilter()
 			if err != nil {
+				slog.Error("Failed to save filter", "filename", tbl.Filter.Name)
 				panic(err)
 			}
 
 			err = manifest.AddTable(tbl, 1)
 			if err != nil {
-				logError(err)
+				slog.Error("Failed to add table to level 1", "filename", tbl.Name)
+				panic(err)
 			}
 			wg.Done()
 		}(splitTable)
@@ -110,9 +112,14 @@ func (c *CompactionImpl[K, V]) level_0_compact(level *Level[K, V], manifest *Man
 	for _, tbl := range level.Tables {
 		wg.Add(1)
 		go func(t *SSTable[K, V]) {
-			logFileIO[K, V](FREMOVE, SSTABLE, t)
-			os.Remove(t.Name)
-			os.Remove(t.Filter.Name)
+			err := os.Remove(t.Name)
+			if err != nil {
+				slog.Warn("Failure to remove table", "filename", t.Name)
+			}
+			err = os.Remove(t.Filter.Name)
+			if err != nil {
+				slog.Warn("Failure to remove filter", "filename", t.Filter.Name)
+			}
 			wg.Done()
 		}(tbl)
 	}
@@ -120,6 +127,7 @@ func (c *CompactionImpl[K, V]) level_0_compact(level *Level[K, V], manifest *Man
 
 	err := manifest.ClearLevel(level.Number)
 	if err != nil {
+		slog.Error("Failed to clear level")
 		panic(err)
 	}
 }
@@ -134,8 +142,6 @@ func (c *CompactionImpl[K, V]) lower_level_compact(level *Level[K, V], manifest 
 	// if lower level is empty, simply move the table from upper level to lower level
 	if len(overlaps) == 0 {
 		newLocation := filepath.Join(c.LevelPaths[level.Number+1], filepath.Base(table.Name))
-
-		logFileIO[K, V](RENAME, SSTABLE, table)
 
 		os.Rename(table.Name, newLocation)
 
@@ -156,21 +162,20 @@ func (c *CompactionImpl[K, V]) lower_level_compact(level *Level[K, V], manifest 
 	for _, splitTable := range split {
 		splitTable.Name = filepath.Join(c.LevelPaths[level.Number+1], fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
 
-		logFileIO[K, V](SYNC, SSTABLE, splitTable)
-
 		_, err := splitTable.Sync()
 		if err != nil {
-			logError(err)
+			slog.Error("Failed to sync table", "filename", splitTable.Name)
 			panic(err)
 		}
 		err = splitTable.SaveFilter()
 		if err != nil {
-			logError(err)
+			slog.Error("Failed to save filter", "filename", splitTable.Filter.Name)
 			panic(err)
 		}
 		err = manifest.AddTable(splitTable, level.Number+1)
 		if err != nil {
-			logError(err)
+			slog.Error("Failed to add table to level 1", "filename", splitTable.Name)
+			panic(err)
 		}
 	}
 
@@ -178,14 +183,16 @@ func (c *CompactionImpl[K, V]) lower_level_compact(level *Level[K, V], manifest 
 	for _, overlapping_table := range overlaps {
 		err := manifest.RemoveTable(overlapping_table, level.Number+1)
 		if err != nil {
-			logError(err)
+			slog.Error("Failure to remove table", "filename", overlapping_table.Name)
+			panic(err)
 		}
 	}
 
 	// Cleanup table from upper level
 	err := manifest.RemoveTable(table, level.Number)
 	if err != nil {
-		logError(err)
+		slog.Error("Failure to remove table", "filename", table.Name)
+		panic(err)
 	}
 }
 
@@ -204,7 +211,6 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 
 	for _, level := range manifest.Levels {
 		if c.Trigger(level) {
-			slog.Debug("Compaction", "level", level.Number)
 			if level.Number == 0 {
 				c.level_0_compact(level, manifest)
 			} else {
@@ -215,9 +221,7 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 }
 
 func findOldestTable[K cmp.Ordered, V any](tables []*SSTable[K, V]) *SSTable[K, V] {
-	if len(tables) == 0 {
-		return nil
-	}
+	assert(len(tables) > 0, "Cannot find oldest table from slice of length 0")
 
 	oldest := tables[0]
 
@@ -230,7 +234,7 @@ func findOldestTable[K cmp.Ordered, V any](tables []*SSTable[K, V]) *SSTable[K, 
 }
 
 func (c *CompactionImpl[K, V]) split(table *SSTable[K, V]) []*SSTable[K, V] {
-	assert(len(table.Entries) > c.SSTable_max_size)
+	assert(len(table.Entries) > c.SSTable_max_size, "Table too small to split")
 
 	var tables []*SSTable[K, V]
 	offset := c.SSTable_max_size
@@ -272,13 +276,14 @@ func (c *CompactionImpl[K, V]) merge(tables ...*SSTable[K, V]) *SSTable[K, V] {
 
 	for _, table := range tables {
 		if len(table.Entries) == 0 {
-			err := table.Open() // We dont close because we arent keeping this table
+			err := table.Open()
 			defer table.Close()
 			if err != nil {
+				slog.Error("merge: error opening table", "filename", table.Name)
 				panic(err)
 			}
 		}
-		assert(len(table.Entries) > 0)
+		assert(len(table.Entries) > 0, "Expected table with entries, found %v entries", len(table.Entries))
 
 		for _, entry := range table.Entries {
 			if entry.Operation == DELETE {

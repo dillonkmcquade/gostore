@@ -162,13 +162,13 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 		case *LogApplyErr[K, V]:
 			slog.Error("ERROR WHILE RECREATING DATABASE STATE FROM WRITE AHEAD LOG.")
 			slog.Error("POSSIBLE DATA LOSS HAS OCCURRED")
-			slog.Error(e.Error())
+			panic(e)
 		case *os.PathError:
-			// Error opening file. Should have log.Fatal'd on WAL creation if file could not be created
-			logError(e)
+			slog.Error("Path error while creating memtable")
+			panic(e)
 		default:
-			logError(err)
-			os.Exit(1)
+			slog.Error("Unknown error occurred while creating memtable")
+			panic(e)
 		}
 	}
 
@@ -179,15 +179,16 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 func (store *GoStore[K, V]) flush() {
 	// create sstable
 	snapshot := store.memTable.Snapshot(store.levelPaths[0])
-	slog.Debug("Flush", "size", len(snapshot.Entries), "filename", snapshot.Name)
 
 	// save to file
 	_, err := snapshot.Sync()
 	if err != nil {
+		slog.Error("flush: error syncing snapshot", "filename", snapshot.Name)
 		panic(err)
 	}
 	err = snapshot.SaveFilter()
 	if err != nil {
+		slog.Error("flush: error saving filter", "filename", snapshot.Filter.Name)
 		panic(err)
 	}
 
@@ -230,7 +231,7 @@ func (store *GoStore[K, V]) Read(key K) (V, error) {
 		if tbl.Filter.Has(key) {
 			err := tbl.Open()
 			if err != nil {
-				logError(err)
+				slog.Error("Read: error opening table", "filename", tbl.Name)
 				return Node[K, V]{}.Value, ErrFileIO
 			}
 			defer tbl.Close()
@@ -247,7 +248,7 @@ func (store *GoStore[K, V]) Read(key K) (V, error) {
 			if level.Tables[i].Filter.Has(key) {
 				err := level.Tables[i].Open()
 				if err != nil {
-					logError(err)
+					slog.Error("Read: error opening table", "filename", level.Tables[i].Name)
 					panic(err)
 				}
 				if val, found := level.Tables[i].Search(key); found {

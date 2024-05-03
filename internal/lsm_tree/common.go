@@ -75,7 +75,6 @@ type CompactionController[K cmp.Ordered, V any] interface {
 
 // Creates directory if it does not exist.
 func mkDir(filename string) error {
-	logFileIO[int, any](CREATE, DIR, filename)
 	_, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return os.MkdirAll(filename, 0750)
@@ -84,9 +83,9 @@ func mkDir(filename string) error {
 }
 
 // Panics if statement does not resolve to true
-func assert(stmt bool) {
+func assert(stmt bool, msg string, args ...any) {
 	if !stmt {
-		panic(fmt.Sprintf("Failed assert: %v", stmt))
+		panic(fmt.Sprintf(msg, args...))
 	}
 }
 

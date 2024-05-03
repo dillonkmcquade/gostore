@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"sort"
@@ -55,10 +56,10 @@ func (l *Level[K, V]) Add(table *SSTable[K, V]) {
 func (l *Level[K, V]) Remove(table *SSTable[K, V]) {
 	l.mut.Lock()
 	defer l.mut.Unlock()
-	assert(len(l.Tables) > 0)
+	assert(len(l.Tables) > 0, "Expected table len > 0, found %v", len(l.Tables))
 
 	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First >= table.First && l.Tables[i].Last >= table.Last })
-	assert(index < len(l.Tables))
+	assert(index < len(l.Tables), "Index %v out of range %v", index, len(l.Tables))
 	if index < len(l.Tables) && l.Tables[index] == table {
 		l.Tables = remove(l.Tables, index)
 		l.Size -= table.Size
@@ -146,7 +147,6 @@ func (m *Manifest[K, V]) AddTable(table *SSTable[K, V], level int) error {
 	if err != nil {
 		return fmt.Errorf("AddTable: %v", err)
 	}
-	logFileIO[K, V](ENCODE, MANIFEST, entry)
 	return m.file.Sync()
 }
 
@@ -157,7 +157,6 @@ func (m *Manifest[K, V]) RemoveTable(table *SSTable[K, V], level int) error {
 	if err != nil {
 		return fmt.Errorf("RemoveTable: %v", err)
 	}
-	logFileIO[K, V](ENCODE, MANIFEST, entry)
 	return m.file.Sync()
 }
 
@@ -168,7 +167,6 @@ func (m *Manifest[K, V]) ClearLevel(level int) error {
 	if err != nil {
 		return fmt.Errorf("ClearLevel: %v", err)
 	}
-	logFileIO[K, V](ENCODE, MANIFEST, entry)
 	return m.file.Sync()
 }
 
@@ -193,12 +191,12 @@ func (m *Manifest[K, V]) Replay() error {
 			return fmt.Errorf("Manifest Replay: %v", err)
 		}
 		entry.Apply(m.Levels[entry.Level])
-		logFileIO[K, V](DECODE, MANIFEST, entry)
 	}
 	for _, level := range m.Levels {
 		for _, tbl := range level.Tables {
 			err = tbl.LoadFilter()
 			if err != nil {
+				slog.Error("Replay: error loading filter")
 				panic(err)
 			}
 		}

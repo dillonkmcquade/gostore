@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,6 +30,7 @@ type WAL[K cmp.Ordered, V any] struct {
 func generateUniqueWALName() string {
 	uniqueString, err := generateRandomString(8)
 	if err != nil {
+		slog.Error("generateUniqueWALName: error generating random string")
 		panic(err)
 	}
 	return fmt.Sprintf("WAL_%v.dat", uniqueString)
@@ -43,9 +45,12 @@ func newWal[K cmp.Ordered, V any](filename string, write_size int) (*WAL[K, V], 
 	}
 	path := filepath.Clean(filename)
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return nil, err
+	}
 	wal := &WAL[K, V]{file: file, encoder: json.NewEncoder(file), writeChan: make(chan *LogEntry[K, V]), entryPool: pool, batch_write_size: write_size}
 	go wal.waitForWrites(write_size)
-	return wal, err
+	return wal, nil
 }
 
 // Receives all entries over writeChan and writes a batch of log entries at a time to file
@@ -60,11 +65,11 @@ func (self *WAL[K, V]) waitForWrites(batchSize int) {
 		defer self.Close()
 		err := self.encoder.Encode(batch[:count+1])
 		if err != nil {
-			logError(err)
+			slog.Error("error encoding incomplete batch", "cause", err)
 		}
 		err = self.file.Sync()
 		if err != nil {
-			logError(err)
+			slog.Error("error encoding incomplete batch", "cause", err)
 		}
 	}()
 	for entry := range self.writeChan {
@@ -74,17 +79,19 @@ func (self *WAL[K, V]) waitForWrites(batchSize int) {
 			self.mut.Lock()
 			err := self.encoder.Encode(batch)
 			if err != nil {
-				logError(err)
+				slog.Error("Error encoding WAL batch")
+				panic(err)
 			}
 			err = self.file.Sync()
 			if err != nil {
-				logError(err)
+				slog.Error("Error syncing WAL file")
+				panic(err)
+
 			}
 			for _, entry := range batch {
 				self.entryPool.Put(entry)
 			}
 			self.mut.Unlock()
-			logFileIO[K, V](SYNC, WALFILE, self.file.Name())
 			count = 0
 		}
 	}
@@ -95,6 +102,7 @@ func (self *WAL[K, V]) Discard() error {
 	self.mut.Lock()
 	err := self.file.Truncate(0)
 	if err != nil {
+		slog.Error("error truncating file", "filename", self.file.Name())
 		return err
 	}
 	_, err = self.file.Seek(0, 0)
@@ -118,6 +126,8 @@ func (self *WAL[K, V]) Write(key K, val V) error {
 		entry.Value = val
 		entry.Operation = INSERT // Deletes are not written to log because they can be removed from the memtable in memory
 		self.writeChan <- entry
+	} else {
+		slog.Error("Retrieved invalid type from pool")
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
+	"log/slog"
 	"os"
 	"sort"
 	"sync"
@@ -43,8 +44,6 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 	}
 	defer tableFile.Close()
 
-	logFileIO[K, V](CREATE, SSTABLE, table)
-
 	encoder := gob.NewEncoder(tableFile)
 	err = encoder.Encode(table.Entries)
 	if err != nil {
@@ -79,6 +78,7 @@ func (table *SSTable[K, V]) LoadFilter() error {
 // *** You must call Close() after opening table
 func (table *SSTable[K, V]) Open() error {
 	if len(table.Entries) > 0 {
+		slog.Warn("Table entries should be empty before calling open")
 		return nil
 	}
 	table.mut.Lock()
@@ -104,7 +104,7 @@ func (table *SSTable[K, V]) Close() error {
 //
 // Panics if attempt to search empty entries array
 func (table *SSTable[K, V]) Search(key K) (V, bool) {
-	assert(len(table.Entries) > 0)
+	assert(len(table.Entries) > 0, "Cannot search 0 entries")
 
 	idx, found := sort.Find(len(table.Entries), func(i int) int { return cmp.Compare(key, table.Entries[i].Key) })
 	if found {

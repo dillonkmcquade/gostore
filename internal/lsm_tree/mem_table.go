@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -61,6 +62,7 @@ func (tbl *GostoreMemTable[K, V]) Clone() MemTable[K, V] {
 	newWalName := filepath.Join(filepath.Dir(tbl.wal.file.Name()), generateUniqueWALName())
 	wal, err := newWal[K, V](newWalName, tbl.wal.batch_write_size)
 	if err != nil {
+		slog.Error("Clone: error creating new WAL")
 		panic(err)
 	}
 	return &GostoreMemTable[K, V]{

@@ -166,7 +166,6 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 		case *os.PathError:
 			// Error opening file. Should have log.Fatal'd on WAL creation if file could not be created
 			logError(e)
-			break
 		default:
 			logError(err)
 			os.Exit(1)

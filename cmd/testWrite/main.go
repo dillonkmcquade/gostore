@@ -21,7 +21,7 @@ var (
 func main() {
 	logLevel.Set(slog.LevelDebug)
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
 
 	flag.Parse()
 
@@ -53,9 +53,7 @@ func main() {
 	gostoreHome := filepath.Join(userHome, ".gostore")
 
 	opts := lsm_tree.NewTestLSMOpts(gostoreHome)
-	opts.BloomOpts.Size = 150000
-	opts.BloomOpts.NumHashFuncs = 7
-	tree := lsm_tree.New[int64, []byte](opts)
+	tree := lsm_tree.New[int64, []uint8](opts)
 
 	defer tree.Close()
 

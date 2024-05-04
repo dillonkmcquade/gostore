@@ -149,7 +149,8 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 	// DATA LAYOUT
 	manifest, err := NewManifest[K, V](opts.ManifestOpts)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("LSM tree: error creating new manifest")
+		panic(err)
 	}
 
 	// COMPACTION STRATEGY
@@ -234,7 +235,14 @@ func (store *GoStore[K, V]) Read(key K) (V, error) {
 				slog.Error("Read: error opening table", "filename", tbl.Name)
 				return Node[K, V]{}.Value, ErrFileIO
 			}
-			defer tbl.Close()
+
+			defer func() {
+				err := tbl.Close()
+				if err != nil {
+					slog.Error("error closing table")
+				}
+			}()
+
 			if val, found := tbl.Search(key); found {
 				return val, nil
 			}
@@ -249,12 +257,12 @@ func (store *GoStore[K, V]) Read(key K) (V, error) {
 				err := level.Tables[i].Open()
 				if err != nil {
 					slog.Error("Read: error opening table", "filename", level.Tables[i].Name)
-					panic(err)
+					return Node[K, V]{}.Value, ErrFileIO
 				}
+				defer level.Tables[i].Close()
 				if val, found := level.Tables[i].Search(key); found {
 					return val, nil
 				}
-				defer level.Tables[i].Close()
 			}
 		}
 	}
@@ -269,5 +277,6 @@ func (store *GoStore[K, V]) Delete(key K) error {
 
 // Close closes all associated resources
 func (store *GoStore[K, V]) Close() error {
+	store.memTable.Close()
 	return store.manifest.Close()
 }

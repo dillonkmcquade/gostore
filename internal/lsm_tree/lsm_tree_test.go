@@ -15,12 +15,48 @@ func TestLSMNew(t *testing.T) {
 }
 
 func TestLSMWrite(t *testing.T) {
-	tmp := t.TempDir()
-	tree := New[int64, any](NewTestLSMOpts(tmp))
-	defer tree.Close()
-	for i := 0; i < 9; i++ {
-		tree.Write(int64(i), "test")
-	}
+	t.Run("1000", func(t *testing.T) {
+		tmp := t.TempDir()
+		tree := New[int64, any](NewTestLSMOpts(tmp))
+		defer tree.Close()
+		for i := 0; i < 1000; i++ {
+			tree.Write(int64(i), "test")
+		}
+		for i := 0; i < 1000; i++ {
+			_, err := tree.Read(int64(i))
+			if err != nil {
+				t.Errorf("Should be found: %v", i)
+			}
+		}
+	})
+	t.Run("1001", func(t *testing.T) {
+		tmp := t.TempDir()
+		tree := New[int64, any](NewTestLSMOpts(tmp))
+		defer tree.Close()
+		for i := 0; i < 1001; i++ {
+			tree.Write(int64(i), "test")
+		}
+		for i := 0; i < 1001; i++ {
+			_, err := tree.Read(int64(i))
+			if err != nil {
+				t.Errorf("Should be found: %v", i)
+			}
+		}
+	})
+	t.Run("1999", func(t *testing.T) {
+		tmp := t.TempDir()
+		tree := New[int64, any](NewTestLSMOpts(tmp))
+		defer tree.Close()
+		for i := 0; i < 1999; i++ {
+			tree.Write(int64(i), "test")
+		}
+		for i := 0; i < 1999; i++ {
+			_, err := tree.Read(int64(i))
+			if err != nil {
+				t.Errorf("Should be found: %v", i)
+			}
+		}
+	})
 }
 
 func TestLSMRead(t *testing.T) {

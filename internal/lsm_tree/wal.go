@@ -24,6 +24,7 @@ type WAL[K cmp.Ordered, V any] struct {
 	batch_write_size int
 	entryPool        *sync.Pool
 	mut              sync.Mutex
+	wg               sync.WaitGroup
 }
 
 // Generates a filename in the format WAL_UNIQUESTRING.dat
@@ -49,6 +50,7 @@ func newWal[K cmp.Ordered, V any](filename string, write_size int) (*WAL[K, V], 
 		return nil, err
 	}
 	wal := &WAL[K, V]{file: file, encoder: json.NewEncoder(file), writeChan: make(chan *LogEntry[K, V]), entryPool: pool, batch_write_size: write_size}
+	wal.wg.Add(1)
 	go wal.waitForWrites(write_size)
 	return wal, nil
 }
@@ -56,26 +58,24 @@ func newWal[K cmp.Ordered, V any](filename string, write_size int) (*WAL[K, V], 
 // Receives all entries over writeChan and writes a batch of log entries at a time to file
 func (self *WAL[K, V]) waitForWrites(batchSize int) {
 	batch := make([]*LogEntry[K, V], batchSize)
-	defer close(self.writeChan)
 	count := 0
 	defer func() {
-		if count == 0 {
-			return
-		}
-		defer self.Close()
-		err := self.encoder.Encode(batch[:count+1])
+		err := self.encoder.Encode(batch[:count])
 		if err != nil {
 			slog.Error("error encoding incomplete batch", "cause", err)
+			return
 		}
 		err = self.file.Sync()
 		if err != nil {
-			slog.Error("error encoding incomplete batch", "cause", err)
+			slog.Error("error encoding syncing batch", "cause", err)
 		}
+		self.file.Close()
+		self.wg.Done()
 	}()
 	for entry := range self.writeChan {
 		batch[count] = entry
 		count++
-		if count == batchSize {
+		if count >= batchSize {
 			self.mut.Lock()
 			err := self.encoder.Encode(batch)
 			if err != nil {
@@ -134,7 +134,9 @@ func (self *WAL[K, V]) Write(key K, val V) error {
 
 // Close closes the Write-Ahead Log file.
 func (self *WAL[K, V]) Close() error {
-	return self.file.Close()
+	close(self.writeChan)
+	self.wg.Wait()
+	return nil
 }
 
 type LogEntry[K cmp.Ordered, V any] struct {

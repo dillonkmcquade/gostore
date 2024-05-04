@@ -81,7 +81,6 @@ func (table *SSTable[K, V]) Open() error {
 		slog.Warn("Table entries should be empty before calling open")
 		return nil
 	}
-	table.mut.Lock()
 	file, err := os.OpenFile(table.Name, os.O_RDONLY, 0600)
 	if err != nil {
 		return err
@@ -96,7 +95,6 @@ func (table *SSTable[K, V]) Open() error {
 // Should only be called after prior call to Open()
 func (table *SSTable[K, V]) Close() error {
 	table.Entries = []*SSTableEntry[K, V]{}
-	defer table.mut.Unlock()
 	return table.file.Close()
 }
 

@@ -15,6 +15,7 @@ run:
 
 clean:
 	rm --force gostore
+	rm *.prof
 	rm -f ~/.gostore/filters/*
 	rm -f ~/.gostore/*.log
 	rm -f ~/.gostore/l0/*
@@ -22,11 +23,23 @@ clean:
 	rm -f ~/.gostore/l2/*
 	rm -f ~/.gostore/l3/*
 
-test: clean 
-	go test -v -race ./internal/...
+test: 
+	go test -v -race -memprofile=mem.prof -cpuprofile=cpu.prof -coverprofile=cover.prof ./internal/lsm_tree/
 
-integration-test:
-	go test -v -race ./tests/... -count=1
+cpu-profile:
+	go tool pprof -http=localhost:3001 cpu.prof
 
+mem-profile:
+	go tool pprof -http=localhost:3001 mem.prof
 
-.PHONY: run build clean test integration-test proto-compile
+cover-profile:
+	go tool cover -html=cover.prof
+
+benchmark:
+	go test -v -bench=. -benchmem -run=^# ./...
+
+integration-test: clean
+	go run cmd/testWrite/main.go && go run cmd/testReplay/main.go
+	
+
+.PHONY: run build clean test integration-test proto-compile benchmark cpu-profile mem-profile cover-profile

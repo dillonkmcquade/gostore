@@ -15,7 +15,9 @@ func TestLSMNew(t *testing.T) {
 }
 
 func TestLSMWrite(t *testing.T) {
+	t.Parallel()
 	t.Run("1000", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		tree := New[int64, any](NewTestLSMOpts(tmp))
 		defer tree.Close()
@@ -30,6 +32,7 @@ func TestLSMWrite(t *testing.T) {
 		}
 	})
 	t.Run("1001", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		tree := New[int64, any](NewTestLSMOpts(tmp))
 		defer tree.Close()
@@ -44,6 +47,7 @@ func TestLSMWrite(t *testing.T) {
 		}
 	})
 	t.Run("1999", func(t *testing.T) {
+		t.Parallel()
 		tmp := t.TempDir()
 		tree := New[int64, any](NewTestLSMOpts(tmp))
 		defer tree.Close()
@@ -73,6 +77,7 @@ func TestLSMRead(t *testing.T) {
 }
 
 func TestLSMFlush(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	opts := NewTestLSMOpts(tmp)
 	opts.MemTableOpts.Max_size = 5

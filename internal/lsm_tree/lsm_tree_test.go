@@ -9,9 +9,27 @@ import (
 )
 
 func TestLSMNew(t *testing.T) {
-	tmp := t.TempDir()
-	tree := New[int64, any](NewTestLSMOpts(tmp))
-	defer tree.Close()
+	t.Run("Test opts", func(t *testing.T) {
+		tmp := t.TempDir()
+		tree := New[int64, any](NewTestLSMOpts(tmp))
+		defer tree.Close()
+	})
+
+	t.Run("Default opts", func(t *testing.T) {
+		tmp := t.TempDir()
+		tree := New[int64, any](NewDefaultLSMOpts(tmp))
+		defer tree.Close()
+	})
+
+	t.Run("Non-existing path", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Should panic")
+			}
+		}()
+
+		_ = New[int64, any](NewTestLSMOpts(""))
+	})
 }
 
 func TestLSMWrite(t *testing.T) {
@@ -67,11 +85,11 @@ func TestLSMRead(t *testing.T) {
 	tmp := t.TempDir()
 	tree := New[int64, any](NewTestLSMOpts(tmp))
 	defer tree.Close()
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 11001; i++ {
 		tree.Write(int64(i), fmt.Sprintf("%vtest", i))
 	}
-	val, err := tree.Read(0)
-	if err != nil || val != "0test" {
+	val, err := tree.Read(11000)
+	if err != nil || val != "11000test" {
 		t.Error(err)
 	}
 }

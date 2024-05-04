@@ -11,12 +11,22 @@ func TestSSTableOverlaps(t *testing.T) {
 		t1 := &SSTable[int64, string]{
 			First: 0,
 			Last:  9,
+			Entries: []*SSTableEntry[int64, string]{
+				{Operation: INSERT, Key: 0, Value: "value1"},
+				{Operation: INSERT, Key: 2, Value: "value2"},
+				{Operation: DELETE, Key: 9, Value: ""},
+			},
 		}
 		t2 := &SSTable[int64, string]{
 			First: 10,
 			Last:  19,
+			Entries: []*SSTableEntry[int64, string]{
+				{Operation: INSERT, Key: 10, Value: "value1"},
+				{Operation: INSERT, Key: 12, Value: "value2"},
+				{Operation: DELETE, Key: 19, Value: ""},
+			},
 		}
-		if t1.Overlaps(t2) {
+		if t1.Overlaps(t2) || t2.Overlaps(t1) {
 			t.Errorf("Should not overlap")
 		}
 	})
@@ -24,10 +34,37 @@ func TestSSTableOverlaps(t *testing.T) {
 	t.Run("T1 should overlap T2", func(t *testing.T) {
 		t1 := &SSTable[int64, string]{
 			First: 0,
-			Last:  11,
+			Last:  9,
+			Entries: []*SSTableEntry[int64, string]{
+				{Operation: INSERT, Key: 0, Value: "value1"},
+				{Operation: INSERT, Key: 2, Value: "value2"},
+				{Operation: DELETE, Key: 9, Value: ""},
+			},
 		}
 		t2 := &SSTable[int64, string]{
-			First: 10,
+			First: 8,
+			Last:  19,
+			Entries: []*SSTableEntry[int64, string]{
+				{Operation: INSERT, Key: 8, Value: "value1"},
+				{Operation: INSERT, Key: 12, Value: "value2"},
+				{Operation: DELETE, Key: 19, Value: ""},
+			},
+		}
+		if !t1.Overlaps(t2) {
+			t.Errorf("T1 should overlap T2")
+		}
+		if !t2.Overlaps(t1) {
+			t.Error("T2 should overlap t1")
+		}
+	})
+
+	t.Run("T1 should overlap T2- no entries", func(t *testing.T) {
+		t1 := &SSTable[int64, string]{
+			First: 0,
+			Last:  9,
+		}
+		t2 := &SSTable[int64, string]{
+			First: 8,
 			Last:  19,
 		}
 		if !t1.Overlaps(t2) {

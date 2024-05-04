@@ -145,7 +145,7 @@ type LogEntry[K cmp.Ordered, V any] struct {
 	Value     V
 }
 
-func (self *LogEntry[K, V]) Apply(rbt *RedBlackTree[K, V]) {
+func (self *LogEntry[K, V]) Apply(rbt TreeMap[K, V]) {
 	rbt.Put(self.Key, self.Value)
 }
 

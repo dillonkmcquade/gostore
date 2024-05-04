@@ -13,7 +13,7 @@ import (
 
 // Implements MemTable[K,V]
 type GostoreMemTable[K cmp.Ordered, V any] struct {
-	rbt *RedBlackTree[K, V]
+	rbt TreeMap[K, V]
 	// The Write-Ahead-Log (wal) contains a log of all in-memory operations
 	// prior to flushing. If the database crashes with data in-memory that has not
 	// been written to disk, the current in-memory state may be recreated again after restart.
@@ -23,59 +23,67 @@ type GostoreMemTable[K cmp.Ordered, V any] struct {
 	bloomPath  string // Path to filters directory
 }
 
-func (tbl *GostoreMemTable[K, V]) Iterator() Iterator[K, V] {
-	return tbl.rbt.Iterator()
+func (mem *GostoreMemTable[K, V]) Iterator() Iterator[K, V] {
+	return mem.rbt.Iterator()
 }
 
-func (tbl *GostoreMemTable[K, V]) ExceedsSize() bool {
-	return tbl.rbt.Size() >= tbl.max_size
+func (mem *GostoreMemTable[K, V]) ExceedsSize() bool {
+	return mem.rbt.Size() >= mem.max_size
 }
 
-func (tbl *GostoreMemTable[K, V]) Put(key K, val V) error {
-	tbl.rbt.Put(key, val)
-	return tbl.wal.Write(key, val)
+func (mem *GostoreMemTable[K, V]) Put(key K, val V) error {
+	mem.rbt.Put(key, val)
+	return mem.wal.Write(key, val)
 }
 
-func (tbl *GostoreMemTable[K, V]) Get(key K) (V, bool) {
-	val, found := tbl.rbt.Get(key)
+func (mem *GostoreMemTable[K, V]) Get(key K) (V, bool) {
+	val, found := mem.rbt.Get(key)
 	return val, found
 }
 
-func (tbl *GostoreMemTable[K, V]) Size() uint {
-	return tbl.rbt.Size()
+func (mem *GostoreMemTable[K, V]) Size() uint {
+	return mem.rbt.Size()
 }
 
-func (tbl *GostoreMemTable[K, V]) Clear() {
-	tbl.rbt.Clear()
-	tbl.wal.Discard()
+func (mem *GostoreMemTable[K, V]) Clear() {
+	mem.rbt.Clear()
+	mem.wal.Discard()
 }
 
-func (tbl *GostoreMemTable[K, V]) Close() error {
-	return tbl.wal.Close()
+func (mem *GostoreMemTable[K, V]) Close() error {
+	return mem.wal.Close()
 }
 
-func (tbl *GostoreMemTable[K, V]) Delete(key K) {
-	tbl.rbt.Delete(key)
+func (mem *GostoreMemTable[K, V]) Delete(key K) {
+	mem.rbt.Delete(key)
 }
 
-func (tbl *GostoreMemTable[K, V]) Clone() MemTable[K, V] {
-	newWalName := filepath.Join(filepath.Dir(tbl.wal.file.Name()), generateUniqueWALName())
-	wal, err := newWal[K, V](newWalName, tbl.wal.batch_write_size)
+// Write memTable to disk as SSTable
+func flush[K cmp.Ordered, V any](mem MemTable[K, V], destDir string) *SSTable[K, V] {
+	// create sstable
+	snapshot := mem.Snapshot(destDir)
+
+	// save to file
+	_, err := snapshot.Sync()
 	if err != nil {
-		slog.Error("Clone: error creating new WAL")
+		slog.Error("flush: error syncing snapshot", "filename", snapshot.Name)
 		panic(err)
 	}
-	return &GostoreMemTable[K, V]{
-		rbt:      &RedBlackTree[K, V]{},
-		wal:      wal,
-		max_size: tbl.max_size,
+	err = snapshot.SaveFilter()
+	if err != nil {
+		slog.Error("flush: error saving filter", "filename", snapshot.Filter.Name)
+		panic(err)
 	}
+
+	// Discard memTable & write-ahead log
+	mem.Clear()
+	return snapshot
 }
 
 // Restores database state from Write-Ahead-Log
-func (self *GostoreMemTable[K, V]) Replay(filename string) error {
+func (mem *GostoreMemTable[K, V]) replay(filename string) error {
 	path := filepath.Clean(filename)
-	self.rbt.Clear()
+	mem.rbt.Clear()
 	file, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("Replay: %v", err)
@@ -84,7 +92,7 @@ func (self *GostoreMemTable[K, V]) Replay(filename string) error {
 
 	dec := json.NewDecoder(file)
 	for {
-		entry := make([]*LogEntry[K, V], self.wal.batch_write_size)
+		entry := make([]*LogEntry[K, V], mem.wal.batch_write_size)
 		if decodeErr := dec.Decode(&entry); decodeErr != nil {
 			if decodeErr == io.EOF {
 				break // End of log file
@@ -94,8 +102,8 @@ func (self *GostoreMemTable[K, V]) Replay(filename string) error {
 		}
 		// Apply the entry to the database
 		for _, e := range entry {
-			e.Apply(self.rbt)
-			self.wal.entryPool.Put(e)
+			e.Apply(mem.rbt)
+			mem.wal.entryPool.Put(e)
 		}
 
 	}
@@ -103,15 +111,15 @@ func (self *GostoreMemTable[K, V]) Replay(filename string) error {
 }
 
 // Returns an SSTable filled with entries, with no size
-func (tbl *GostoreMemTable[K, V]) Snapshot(destDir string) *SSTable[K, V] {
+func (mem *GostoreMemTable[K, V]) Snapshot(destDir string) *SSTable[K, V] {
 	timestamp := time.Now()
 	sstable := &SSTable[K, V]{
-		Entries:   make([]*SSTableEntry[K, V], 0, tbl.rbt.Size()),
+		Entries:   make([]*SSTableEntry[K, V], 0, mem.rbt.Size()),
 		Name:      filepath.Join(destDir, generateUniqueSegmentName(timestamp)),
-		Filter:    NewBloomFilter[K](&BloomFilterOpts{tbl.bloom_size, tbl.bloomPath}),
+		Filter:    NewBloomFilter[K](&BloomFilterOpts{mem.bloom_size, mem.bloomPath}),
 		CreatedOn: timestamp,
 	}
-	iter := tbl.rbt.Iterator()
+	iter := mem.rbt.Iterator()
 	for iter.HasNext() {
 		node := iter.Next()
 		entry := &SSTableEntry[K, V]{Key: node.Key, Value: node.Value, Operation: node.Operation}
@@ -137,7 +145,7 @@ func NewGostoreMemTable[K cmp.Ordered, V any](opts *GoStoreMemTableOpts) (*Gosto
 		return nil, fmt.Errorf("NewGostoreMemTable: %v", err.Error())
 	}
 	memtable := &GostoreMemTable[K, V]{rbt: &RedBlackTree[K, V]{}, max_size: opts.Max_size, wal: wal, bloom_size: opts.Bloom_size, bloomPath: opts.BloomPath}
-	err = memtable.Replay(opts.walPath)
+	err = memtable.replay(opts.walPath)
 	if err != nil {
 		return nil, err
 	}

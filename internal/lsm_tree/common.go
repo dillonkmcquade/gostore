@@ -3,8 +3,6 @@ package lsm_tree
 import (
 	"cmp"
 	"errors"
-	"fmt"
-	"os"
 )
 
 // TODO: Possible to extract this to config file
@@ -43,61 +41,28 @@ type Iterable[K cmp.Ordered, V any] interface {
 	Iterator() Iterator[K, V]
 }
 
+// A key-value balanced tree data structure
+type TreeMap[K cmp.Ordered, V any] interface {
+	Iterable[K, V]
+	Get(K) (V, bool)
+	Put(K, V)
+	Delete(K)
+	Clear()
+	Size() uint
+}
+
 // In-memory balanced key-value store
 type MemTable[K cmp.Ordered, V any] interface {
-	Iterable[K, V]
-	// Insert Node to memTable
-	Put(K, V) error
-	// Get returns a value associated with the key
-	Get(K) (V, bool)
-	// Insert a node marked as delete
-	Delete(K)
-	// Returns the number of nodes in the memtable
-	Size() uint
-	// Should memtable be flushed
-	ExceedsSize() bool
-	// Create snapshot of memtable as SSTable
-	Snapshot(string) *SSTable[K, V]
-
-	// Generate new empty memtable with the same options
-	Clone() MemTable[K, V]
-	// Clear points root to nil and makes size = 0
-	Clear()
-	// Closes active resources
-	Close() error
+	Put(K, V) error                 // Insert Node to memTable
+	Get(K) (V, bool)                // Get returns a value associated with the key
+	Delete(K)                       // Insert a node marked as delete
+	ExceedsSize() bool              // Should memtable be flushed
+	Snapshot(string) *SSTable[K, V] // Create snapshot of memtable as SSTable
+	Clear()                         // Clear points root to nil and makes size = 0
+	Close() error                   // Closes active resources
 }
 
 type CompactionController[K cmp.Ordered, V any] interface {
 	Compact(*Manifest[K, V])
-	// GenerateCompactionTask(Manifest[K, V]) *CompactionTask[K, V]
 	Trigger(*Level[K, V]) bool
-}
-
-// Creates directory if it does not exist.
-func mkDir(filename string) error {
-	_, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return os.MkdirAll(filename, 0750)
-	}
-	return err
-}
-
-// Panics if statement does not resolve to true
-func assert(stmt bool, msg string, args ...any) {
-	if !stmt {
-		panic(fmt.Sprintf(msg, args...))
-	}
-}
-
-func remove[T any](slice []T, i int) []T {
-	return append(slice[:i], slice[i+1:]...)
-}
-
-func insertAt[T any](slice []T, i int, val T) []T {
-	if i >= len(slice) {
-		return append(slice, val)
-	}
-	slice = append(slice[:i+1], slice[i:]...)
-	slice[i] = val
-	return slice
 }

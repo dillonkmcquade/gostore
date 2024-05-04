@@ -3,6 +3,7 @@ package lsm_tree
 import (
 	"cmp"
 	"encoding/gob"
+	"fmt"
 	"log/slog"
 	"os"
 	"sort"
@@ -15,6 +16,25 @@ type SSTableEntry[K cmp.Ordered, V any] struct {
 	Operation Operation
 	Key       K
 	Value     V
+}
+
+func (t SSTableEntry[K, V]) String() string {
+	return fmt.Sprintf("{%v,%v}", t.Key, t.Value)
+}
+
+type NewTableOpts[K cmp.Ordered, V any] struct {
+	BloomOpts *BloomFilterOpts
+	Name      string
+	Entries   []*SSTableEntry[K, V]
+}
+
+func NewSSTable[K cmp.Ordered, V any](opts *NewTableOpts[K, V]) *SSTable[K, V] {
+	return &SSTable[K, V]{
+		Name:      opts.Name,
+		Entries:   opts.Entries,
+		Filter:    NewBloomFilter[K](opts.BloomOpts),
+		CreatedOn: time.Now(),
+	}
 }
 
 // SSTable represents a Sorted String Table. Entries are sorted by key.
@@ -31,6 +51,7 @@ type SSTable[K cmp.Ordered, V any] struct {
 	mut sync.Mutex
 }
 
+// Test if table key range overlaps the key range of another
 func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
 	return (table.First >= anotherTable.First && table.First <= anotherTable.Last) ||
 		(table.Last >= anotherTable.First && table.Last <= anotherTable.Last)

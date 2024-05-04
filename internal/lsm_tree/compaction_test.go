@@ -3,6 +3,7 @@ package lsm_tree
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -96,6 +97,8 @@ func TestLevel0Compaction(t *testing.T) {
 
 func newTestLevel() *Level[int32, string] {
 	sstable1 := &SSTable[int32, string]{
+		First: 1,
+		Last:  3,
 		Entries: []*SSTableEntry[int32, string]{
 			{Operation: INSERT, Key: 1, Value: "value1"},
 			{Operation: INSERT, Key: 2, Value: "value2"},
@@ -103,6 +106,8 @@ func newTestLevel() *Level[int32, string] {
 		},
 	}
 	sstable2 := &SSTable[int32, string]{
+		First: 4,
+		Last:  9,
 		Entries: []*SSTableEntry[int32, string]{
 			{Operation: INSERT, Key: 4, Value: "value3"},
 			{Operation: INSERT, Key: 5, Value: "value4"},
@@ -132,7 +137,7 @@ func TestCompactionMerge(t *testing.T) {
 	}
 
 	timestamp := time.Now()
-	merged := c.merge(level.Tables...)
+	merged := mergeTables(level.Tables...)
 
 	t.Run("Test merge", func(t *testing.T) {
 		if len(merged.Entries) != (len(level.Tables[0].Entries) + len(level.Tables[1].Entries)) {
@@ -153,7 +158,12 @@ func TestCompactionMerge(t *testing.T) {
 	t.Run("Test split", func(t *testing.T) {
 		merged.Open()
 		defer merged.Close()
-		splits := c.split(merged)
+		splits := splitTable(merged, c.SSTable_max_size, &NewTableOpts[int32, string]{
+			BloomOpts: &BloomFilterOpts{
+				Size: 10000,
+				Path: opts.MemTableOpts.BloomPath,
+			},
+		})
 		if len(splits) != 5 {
 			t.Errorf("Number of output tables should be 5, got %v", len(splits))
 		}
@@ -164,7 +174,12 @@ func TestCompactionMerge(t *testing.T) {
 			}
 		}
 
-		splits2 := c.split(level.Tables[1])
+		splits2 := splitTable(merged, 3, &NewTableOpts[int32, string]{
+			BloomOpts: &BloomFilterOpts{
+				Size: 10000,
+				Path: opts.MemTableOpts.BloomPath,
+			},
+		})
 		if len(splits2) != 3 {
 			t.Errorf("Number of output tables should be 3, got %v", len(splits))
 		}
@@ -173,6 +188,99 @@ func TestCompactionMerge(t *testing.T) {
 			if table.First != table.Entries[0].Key || table.Last != table.Entries[len(table.Entries)-1].Key {
 				t.Errorf("First: %v | Last: %v | First entry: %v | Last entry: %v", table.First, table.Last, table.Entries[0].Key, table.Entries[len(table.Entries)-1].Key)
 			}
+		}
+	})
+}
+
+func TestFindOverlappingTables(t *testing.T) {
+	t1 := &SSTable[int32, string]{
+		First: 1,
+		Last:  3,
+		Entries: []*SSTableEntry[int32, string]{
+			{Operation: INSERT, Key: 1, Value: "value1"},
+			{Operation: INSERT, Key: 2, Value: "value2"},
+			{Operation: DELETE, Key: 3, Value: ""},
+		},
+	}
+	l2 := newTestLevel()
+
+	t.Run("Overlap one table", func(t *testing.T) {
+		tbls := findOverlappingSSTables(t1, l2)
+
+		if len(tbls) != 1 {
+			for _, table := range tbls {
+				t.Log(fmt.Sprintf("%v", table.Entries))
+			}
+			t.Errorf("Expected 1 table, found %v", len(tbls))
+		}
+
+		if !reflect.DeepEqual(t1, tbls[0]) {
+			t.Error("Should be the same table")
+		}
+	})
+
+	t.Run("Empty lower level", func(t *testing.T) {
+		emptyLevel := &Level[int32, string]{}
+		tbls := findOverlappingSSTables(t1, emptyLevel)
+		if len(tbls) != 0 {
+			t.Error("Should return 0 overlapping tables")
+		}
+	})
+
+	t.Run("Overlap more than one table", func(t *testing.T) {
+		wideTable := &SSTable[int32, string]{
+			First: 1,
+			Last:  5,
+			Entries: []*SSTableEntry[int32, string]{
+				{Operation: INSERT, Key: 1, Value: "value1"},
+				{Operation: INSERT, Key: 2, Value: "value2"},
+				{Operation: DELETE, Key: 3, Value: ""},
+				{Operation: INSERT, Key: 4, Value: "value3"},
+				{Operation: INSERT, Key: 5, Value: "value4"},
+			},
+		}
+		tbls := findOverlappingSSTables(wideTable, newTestLevel())
+		if len(tbls) != 2 {
+			t.Error("Should overlap two tables")
+		}
+	})
+}
+
+func TestFindOldestTable(t *testing.T) {
+	t.Run("4 element slice", func(t *testing.T) {
+		now := time.Now()
+		tables := []*SSTable[int64, string]{
+			{CreatedOn: now},
+			{CreatedOn: now.Add(-time.Hour * 24)},     // 1 day ago
+			{CreatedOn: now.Add(-time.Hour * 24 * 2)}, // 2 days ago
+			{CreatedOn: now.Add(-time.Hour * 24 * 7)}, // 7 days ago
+		}
+
+		expectedOldest := tables[3]
+
+		oldest := findOldestTable(tables)
+
+		if !reflect.DeepEqual(oldest, expectedOldest) {
+			t.Errorf("Expected oldest table to be %v, but got %v", expectedOldest, oldest)
+		}
+	})
+
+	t.Run("empty slice", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Should panic on empty slice")
+			}
+		}()
+		tables := []*SSTable[int64, string]{}
+		_ = findOldestTable(tables)
+	})
+
+	t.Run("one element slice", func(t *testing.T) {
+		tables := []*SSTable[int64, string]{{CreatedOn: time.Now()}}
+		oldest := findOldestTable(tables)
+		expectedOldest := tables[0]
+		if !reflect.DeepEqual(oldest, expectedOldest) {
+			t.Error("oldest element of 1-length slice should return element at index 0")
 		}
 	})
 }

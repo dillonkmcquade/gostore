@@ -2,8 +2,6 @@ package lsm_tree
 
 import (
 	"cmp"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -52,15 +50,6 @@ func (c *CompactionImpl[K, V]) Trigger(level *Level[K, V]) bool {
 	return level.Size >= level.MaxSize
 }
 
-// Generate a random string of n bytes
-func generateRandomString(n int) (string, error) {
-	bytes := make([]byte, n)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
-}
-
 // Generate a unique SSTable filename in the format TIMESTAMP_UNIQUESTRING.segment
 func generateUniqueSegmentName(time time.Time) string {
 	uniqueString, err := generateRandomString(8)
@@ -76,10 +65,15 @@ func generateUniqueSegmentName(time time.Time) string {
 // All tables from L0 are merged->split->sync->L1
 func (c *CompactionImpl[K, V]) level_0_compact(level *Level[K, V], manifest *Manifest[K, V]) {
 	// Merge all tables
-	merged := c.merge(level.Tables...)
+	merged := mergeTables(level.Tables...)
 
 	// Split
-	split := c.split(merged)
+	split := splitTable(merged, c.SSTable_max_size, &NewTableOpts[K, V]{
+		BloomOpts: &BloomFilterOpts{
+			Size: uint64(c.SSTable_max_size * 10),
+			Path: c.BloomPath,
+		},
+	})
 
 	var wg sync.WaitGroup
 	// Write files and add to manifest
@@ -137,7 +131,7 @@ func (c *CompactionImpl[K, V]) lower_level_compact(level *Level[K, V], manifest 
 	// Choose oldest table
 	table := findOldestTable(level.Tables)
 	// find tables in lowerlevel that overlap with table in upper level
-	overlaps := c.findOverlappingSSTables(table, manifest.Levels[level.Number+1])
+	overlaps := findOverlappingSSTables(table, manifest.Levels[level.Number+1])
 
 	// if lower level is empty, simply move the table from upper level to lower level
 	if len(overlaps) == 0 {
@@ -153,10 +147,15 @@ func (c *CompactionImpl[K, V]) lower_level_compact(level *Level[K, V], manifest 
 		return
 	}
 
-	merged := c.merge(append(overlaps, table)...)
+	merged := mergeTables(append(overlaps, table)...)
 
 	// Split merged table into smaller sizes
-	split := c.split(merged)
+	split := splitTable(merged, c.SSTable_max_size, &NewTableOpts[K, V]{
+		BloomOpts: &BloomFilterOpts{
+			Size: uint64(c.SSTable_max_size * 10),
+			Path: c.BloomPath,
+		},
+	})
 
 	// Write files and add to manifest
 	for _, splitTable := range split {
@@ -221,6 +220,7 @@ func (c *CompactionImpl[K, V]) Compact(manifest *Manifest[K, V]) {
 }
 
 func findOldestTable[K cmp.Ordered, V any](tables []*SSTable[K, V]) *SSTable[K, V] {
+	// Tables should never be empty if it triggered compaction
 	assert(len(tables) > 0, "Cannot find oldest table from slice of length 0")
 
 	oldest := tables[0]
@@ -233,11 +233,11 @@ func findOldestTable[K cmp.Ordered, V any](tables []*SSTable[K, V]) *SSTable[K, 
 	return oldest
 }
 
-func (c *CompactionImpl[K, V]) split(table *SSTable[K, V]) []*SSTable[K, V] {
-	assert(len(table.Entries) > c.SSTable_max_size, "Table too small to split")
+func splitTable[K cmp.Ordered, V any](table *SSTable[K, V], maxSize int, tableOpts *NewTableOpts[K, V]) []*SSTable[K, V] {
+	assert(len(table.Entries) > maxSize, "Table too small to split")
 
 	var tables []*SSTable[K, V]
-	offset := c.SSTable_max_size
+	offset := maxSize
 
 	var i int
 	for i = 0; i < len(table.Entries); {
@@ -248,17 +248,10 @@ func (c *CompactionImpl[K, V]) split(table *SSTable[K, V]) []*SSTable[K, V] {
 			lastIndex = min(i+int(offset)-1, len(table.Entries)-1)
 		}
 
-		timestamp := time.Now()
-		tbl := &SSTable[K, V]{
-			Entries: table.Entries[i : lastIndex+1],
-			First:   table.Entries[i].Key,
-			Last:    table.Entries[lastIndex].Key,
-			Filter: NewBloomFilter[K](&BloomFilterOpts{
-				Size: uint64(offset * 10),
-				Path: c.BloomPath,
-			}),
-			CreatedOn: timestamp,
-		}
+		tbl := NewSSTable(tableOpts)
+		tbl.Entries = table.Entries[i : lastIndex+1]
+		tbl.First = table.Entries[i].Key
+		tbl.Last = table.Entries[lastIndex].Key
 		for _, e := range table.Entries[i : lastIndex+1] {
 			tbl.Filter.Add(e.Key)
 		}
@@ -271,7 +264,7 @@ func (c *CompactionImpl[K, V]) split(table *SSTable[K, V]) []*SSTable[K, V] {
 }
 
 // Merge creates a new SSTable from multiple sorted SSTables
-func (c *CompactionImpl[K, V]) merge(tables ...*SSTable[K, V]) *SSTable[K, V] {
+func mergeTables[K cmp.Ordered, V any](tables ...*SSTable[K, V]) *SSTable[K, V] {
 	tree := &RedBlackTree[K, V]{}
 
 	for _, table := range tables {
@@ -309,8 +302,11 @@ func (c *CompactionImpl[K, V]) merge(tables ...*SSTable[K, V]) *SSTable[K, V] {
 	return sstable
 }
 
-func (c *CompactionImpl[K, V]) findOverlappingSSTables(upper_table *SSTable[K, V], lower_level *Level[K, V]) []*SSTable[K, V] {
-	overlaps := make([]*SSTable[K, V], 0)
+func findOverlappingSSTables[K cmp.Ordered, V any](upper_table *SSTable[K, V], lower_level *Level[K, V]) []*SSTable[K, V] {
+	if len(lower_level.Tables) == 0 {
+		return []*SSTable[K, V]{}
+	}
+	overlaps := []*SSTable[K, V]{}
 	for _, lower_table := range lower_level.Tables {
 		if upper_table.Overlaps(lower_table) {
 			overlaps = append(overlaps, lower_table)

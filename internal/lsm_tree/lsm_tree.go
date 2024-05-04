@@ -54,6 +54,9 @@ type LSMOpts struct {
 //		SSTable_max_size: 40_000_000,
 //	}
 func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
+	if gostorepath == "" {
+		panic("gostorepath not provided")
+	}
 	return &LSMOpts{
 		MemTableOpts: &GoStoreMemTableOpts{
 			walPath:          filepath.Join(gostorepath, "WAL.log"),
@@ -65,14 +68,14 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 		ManifestOpts: &ManifestOpts{
 			Path:            filepath.Join(gostorepath, "manifest.log"),
 			Num_levels:      4,
-			Level0_max_size: 300,
+			Level0_max_size: 300000000,
 		},
 		GoStorePath: gostorepath,
 		LevelPaths: []string{
 			filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
 			filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
 		},
-		SSTable_max_size: 40_000_000,
+		SSTable_max_size: 400000,
 	}
 }
 
@@ -99,6 +102,9 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 //		SSTable_max_size: 1000,
 //	}
 func NewTestLSMOpts(gostorepath string) *LSMOpts {
+	if gostorepath == "" {
+		panic("gostorepath not provided")
+	}
 	return &LSMOpts{
 		MemTableOpts: &GoStoreMemTableOpts{
 			walPath:          filepath.Join(gostorepath, "WAL.log"),
@@ -176,39 +182,16 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) LSMTree[K, V] {
 	return &GoStore[K, V]{memTable: memtable, manifest: manifest, compaction: comp, levelPaths: opts.LevelPaths}
 }
 
-// Write memTable to disk as SSTable
-func (store *GoStore[K, V]) flush() {
-	// create sstable
-	snapshot := store.memTable.Snapshot(store.levelPaths[0])
-
-	// save to file
-	_, err := snapshot.Sync()
-	if err != nil {
-		slog.Error("flush: error syncing snapshot", "filename", snapshot.Name)
-		panic(err)
-	}
-	err = snapshot.SaveFilter()
-	if err != nil {
-		slog.Error("flush: error saving filter", "filename", snapshot.Filter.Name)
-		panic(err)
-	}
-
-	// Discard memTable & write-ahead log
-	store.memTable.Clear()
-	store.mut.Unlock()
-	store.manifest.AddTable(snapshot, 0)
-	store.compaction.Compact(store.manifest)
-}
-
 // Write the Key-Value pair to the memtable
 func (store *GoStore[K, V]) Write(key K, val V) error {
 	store.mut.Lock()
+	defer store.mut.Unlock()
 	store.memTable.Put(key, val)
 	if store.memTable.ExceedsSize() {
-		store.flush() // flush unlocks mutex
-		return nil
+		tbl := flush(store.memTable, store.levelPaths[0])
+		store.manifest.AddTable(tbl, 0)
+		store.compaction.Compact(store.manifest)
 	}
-	store.mut.Unlock()
 	return nil
 }
 

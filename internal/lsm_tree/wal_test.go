@@ -81,3 +81,12 @@ func TestWALDiscard(t *testing.T) {
 		t.Errorf("File size should be 0, received %v", size)
 	}
 }
+
+func TestGenerateUniqueWALName(t *testing.T) {
+	n1 := generateUniqueWALName()
+	n2 := generateUniqueWALName()
+
+	if n1 == n2 {
+		t.Error("Should be different")
+	}
+}

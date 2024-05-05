@@ -1,6 +1,7 @@
-package lsm_tree
+package ordered
 
 import (
+	"math/rand"
 	"testing"
 )
 
@@ -87,63 +88,65 @@ func TestRBT(t *testing.T) {
 			t.Error("Should be 7")
 		}
 	})
+
+	t.Run("Test insert random numbers", func(t *testing.T) {
+		tree := &RedBlackTree[int, any]{}
+		for i := 0; i < 1000; i++ {
+			key := rand.Intn(10000)
+			tree.Put(key, "TEST")
+		}
+	})
 }
 
 func TestRBTIterator(t *testing.T) {
 	t.Run("Descending order insert", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
-		elements := []struct {
-			key   int
-			value string
-		}{
-			{5, "value5"},
-			{4, "value4"},
-			{3, "value3"},
-			{2, "value2"},
-			{1, "value1"},
+		tree := &RedBlackTree[int, string]{}
+		elements := []string{
+			"value5",
+			"value4",
+			"value3",
+			"value2",
+			"value1",
 		}
-		for _, element := range elements {
-			tree.Put(element.key, element.value)
+		for i, element := range elements {
+			tree.Put(i, element)
 		}
 		if tree.Size() != 5 {
 			t.Error("Should be 5")
 		}
 
-		iter := tree.Iterator()
+		iter := tree.Values()
 		count := 0
 		for iter.HasNext() {
-			node := iter.Next()
-			count++
-			if node.Key != count {
-				t.Errorf("%v should be %v", node.Key, count)
+			val := iter.Next()
+			if val != elements[count] {
+				t.Errorf("%v should be %v", val, elements[count])
 			}
+			count++
 		}
 	})
 
 	t.Run("Ascending order insert", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
-		elements := []struct {
-			key   int
-			value string
-		}{
-			{1, "value1"},
-			{2, "value2"},
-			{3, "value3"},
-			{4, "value4"},
-			{5, "value5"},
+		tree := &RedBlackTree[int, string]{}
+		elements := []string{
+			"value1",
+			"value2",
+			"value3",
+			"value4",
+			"value5",
 		}
-		for _, element := range elements {
-			tree.Put(element.key, element.value)
+		for i, element := range elements {
+			tree.Put(i, element)
 		}
 
-		iter := tree.Iterator()
+		iter := tree.Values()
 		count := 0
 		for iter.HasNext() {
-			node := iter.Next()
-			count++
-			if node.Key != count {
-				t.Errorf("%v should be %v", node.Key, count)
+			val := iter.Next()
+			if val != elements[count] {
+				t.Errorf("%v should be %v", val, elements[count])
 			}
+			count++
 		}
 	})
 }

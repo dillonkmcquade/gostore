@@ -1,9 +1,19 @@
-package lsm_tree
+package ordered
 
 import (
 	"cmp"
 	"fmt"
 )
+
+// A key-value balanced tree data structure
+type Collection[K cmp.Ordered, V any] interface {
+	Iterable[K, V]
+	Get(K) (V, bool) // Get value from key
+	Put(K, V)        // Insert node
+	Delete(K)        // Insert node with DELETE marker
+	Clear()
+	Size() uint
+}
 
 type RedBlackTree[K cmp.Ordered, V any] struct {
 	size uint
@@ -14,54 +24,85 @@ type Node[K cmp.Ordered, V any] struct {
 	left, right, parent *Node[K, V]
 	Key                 K
 	Value               V
-	Operation           Operation
 	isBlack             bool
+}
+
+func Rbt[K cmp.Ordered, V any]() Collection[K, V] {
+	return &RedBlackTree[K, V]{}
 }
 
 func (node *Node[K, V]) String() string {
 	return fmt.Sprintf("Node(black: %v) {%v %v}", node.isBlack, node.Key, node.Value)
 }
 
-func newNode[K cmp.Ordered, V any](key K, val V, op Operation) *Node[K, V] {
-	return &Node[K, V]{isBlack: false, Key: key, Value: val, left: nil, right: nil, parent: nil, Operation: op}
+func newNode[K cmp.Ordered, V any](key K, val V) *Node[K, V] {
+	return &Node[K, V]{isBlack: false, Key: key, Value: val, left: nil, right: nil, parent: nil}
 }
 
-type RBTIterator[K cmp.Ordered, V any] struct {
-	nodes []*Node[K, V]
+// A smallest-to-largest Node iterator
+type Iterator[V any] interface {
+	HasNext() bool
+	Next() V
+}
+
+// Iterable specifies a struct that may return an Iterator
+type Iterable[K cmp.Ordered, V any] interface {
+	Keys() Iterator[K]
+	Values() Iterator[V]
+}
+
+type RBTIterator[V any | cmp.Ordered] struct {
+	nodes []V
 	index int
 }
 
-func (iter *RBTIterator[K, V]) HasNext() bool {
+func (iter *RBTIterator[V]) HasNext() bool {
 	return iter.index < len(iter.nodes)
 }
 
-func (iter *RBTIterator[K, V]) Next() *Node[K, V] {
-	if iter.HasNext() {
-		node := iter.nodes[iter.index]
-		iter.index++
-		return node
-	}
-	return nil
+func (iter *RBTIterator[V]) Next() V {
+	node := iter.nodes[iter.index]
+	iter.index++
+	return node
 }
 
-func newRBTIterator[K cmp.Ordered, V any](root *Node[K, V], size uint) *RBTIterator[K, V] {
-	list := make([]*Node[K, V], 0, size)
+func newValueIterator[K cmp.Ordered, V any](root *Node[K, V], size uint) *RBTIterator[V] {
+	list := make([]V, 0, size)
 	sortedNodeList(root, &list)
-	return &RBTIterator[K, V]{nodes: list}
+	return &RBTIterator[V]{nodes: list}
+}
+
+func newKeyIterator[K cmp.Ordered, V any](root *Node[K, V], size uint) *RBTIterator[K] {
+	list := make([]K, 0, size)
+	sortedKeyList(root, &list)
+	return &RBTIterator[K]{nodes: list}
 }
 
 // Traverses the tree inorder and appends each node to the list
-func sortedNodeList[K cmp.Ordered, V any](root *Node[K, V], list *[]*Node[K, V]) {
+func sortedNodeList[K cmp.Ordered, V any](root *Node[K, V], list *[]V) {
 	if root == nil {
 		return
 	}
 	sortedNodeList(root.left, list)
-	*list = append(*list, root)
+	*list = append(*list, root.Value)
 	sortedNodeList(root.right, list)
 }
 
-func (rbt *RedBlackTree[K, V]) Iterator() Iterator[K, V] {
-	return newRBTIterator(rbt.root, rbt.Size())
+func sortedKeyList[K cmp.Ordered, V any](root *Node[K, V], list *[]K) {
+	if root == nil {
+		return
+	}
+	sortedKeyList(root.left, list)
+	*list = append(*list, root.Key)
+	sortedKeyList(root.right, list)
+}
+
+func (rbt *RedBlackTree[K, V]) Values() Iterator[V] {
+	return newValueIterator(rbt.root, rbt.Size())
+}
+
+func (rbt *RedBlackTree[K, V]) Keys() Iterator[K] {
+	return newKeyIterator(rbt.root, rbt.Size())
 }
 
 func (rbt *RedBlackTree[K, V]) Size() uint {
@@ -75,13 +116,13 @@ func (rbt *RedBlackTree[K, V]) Clear() {
 
 // Insert or update value at key
 func (rbt *RedBlackTree[K, V]) Put(key K, val V) {
-	rbt.root = rbt.put(rbt.root, key, val, INSERT)
+	rbt.root = rbt.put(rbt.root, key, val)
 	rbt.root.isBlack = true
 }
 
 // Update node Op to be DELETE
 func (rbt *RedBlackTree[K, V]) Delete(key K) {
-	rbt.root = rbt.put(rbt.root, key, Node[K, V]{}.Value, DELETE)
+	rbt.root = rbt.put(rbt.root, key, Node[K, V]{}.Value)
 	rbt.root.isBlack = true
 }
 
@@ -92,19 +133,19 @@ func isRed[K cmp.Ordered, V any](node *Node[K, V]) bool {
 	return !node.isBlack
 }
 
-func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V, op Operation) *Node[K, V] {
+func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V) *Node[K, V] {
 	if node == nil {
 		rbt.size++
-		return newNode(key, val, op)
+		return newNode(key, val)
 	}
 	comp := cmp.Compare(key, node.Key)
 	if comp < 0 {
-		node.left = rbt.put(node.left, key, val, op)
+		node.left = rbt.put(node.left, key, val)
 	} else if comp > 0 {
-		node.right = rbt.put(node.right, key, val, op)
+		node.right = rbt.put(node.right, key, val)
 	} else {
 		node.Value = val
-		node.Operation = op
+		// node.Operation = op
 	}
 
 	if isRed(node.right) && !isRed(node.left) {
@@ -159,6 +200,6 @@ func (rbt *RedBlackTree[K, V]) get(node *Node[K, V], key K) (V, bool) {
 	} else if key < node.Key {
 		return rbt.get(node.left, key)
 	} else {
-		return node.Value, node.Operation != DELETE
+		return node.Value, true
 	}
 }

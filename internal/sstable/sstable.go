@@ -1,4 +1,4 @@
-package lsm_tree
+package sstable
 
 import (
 	"cmp"
@@ -6,49 +6,60 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/dillonkmcquade/gostore/internal/assert"
+	"github.com/dillonkmcquade/gostore/internal/filter"
 )
 
-// SSTableEntry represents an entry in the SSTable.
-type SSTableEntry[K cmp.Ordered, V any] struct {
+type Operation byte
+
+const (
+	INSERT Operation = iota
+	DELETE
+)
+
+// Entry represents an entry in the SSTable.
+type Entry[K cmp.Ordered, V any] struct {
 	Operation Operation
 	Key       K
 	Value     V
 }
 
-func (t SSTableEntry[K, V]) String() string {
+func (t Entry[K, V]) String() string {
 	return fmt.Sprintf("{%v,%v}", t.Key, t.Value)
 }
 
-type NewTableOpts[K cmp.Ordered, V any] struct {
-	BloomOpts *BloomFilterOpts
-	Name      string
-	Entries   []*SSTableEntry[K, V]
+type Opts[K cmp.Ordered, V any] struct {
+	BloomOpts *filter.Opts
+	DestDir   string
+	Entries   []*Entry[K, V]
 }
 
-func NewSSTable[K cmp.Ordered, V any](opts *NewTableOpts[K, V]) *SSTable[K, V] {
+func New[K cmp.Ordered, V any](opts *Opts[K, V]) *SSTable[K, V] {
+	timestamp := time.Now()
 	return &SSTable[K, V]{
-		Name:      opts.Name,
+		Name:      filepath.Join(opts.DestDir, GenerateUniqueSegmentName(timestamp)),
 		Entries:   opts.Entries,
-		Filter:    NewBloomFilter[K](opts.BloomOpts),
-		CreatedOn: time.Now(),
+		Filter:    filter.New[K](opts.BloomOpts),
+		CreatedOn: timestamp,
 	}
 }
 
 // SSTable represents a Sorted String Table. Entries are sorted by key.
 type SSTable[K cmp.Ordered, V any] struct {
-	Entries   []*SSTableEntry[K, V]
-	Filter    *BloomFilter[K]
-	file      *os.File
-	Size      int64     // Size of file in bytes
-	Name      string    // full filename
-	First     K         // First key in range
-	Last      K         // Last key in range
-	CreatedOn time.Time // Timestamp
-
-	mut sync.Mutex
+	Entries   []*Entry[K, V]         // A list of entries sorted by key
+	Filter    *filter.BloomFilter[K] // Check if key could be in table
+	file      *os.File               // pointer to file descriptor for the table
+	Size      int64                  // Size of file in bytes
+	Name      string                 // full filename
+	First     K                      // First key in range
+	Last      K                      // Last key in range
+	CreatedOn time.Time              // Timestamp
+	mut       sync.Mutex
 }
 
 // Test if table key range overlaps the key range of another
@@ -74,7 +85,7 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	table.Entries = []*SSTableEntry[K, V]{}
+	table.Entries = []*Entry[K, V]{}
 	table.file = tableFile
 	fd, err := tableFile.Stat()
 	if err != nil {
@@ -98,13 +109,14 @@ func (table *SSTable[K, V]) LoadFilter() error {
 //
 // *** You must call Close() after opening table
 func (table *SSTable[K, V]) Open() error {
+	table.mut.Lock()
 	if len(table.Entries) > 0 {
 		slog.Warn("Table entries should be empty before calling open")
 		return nil
 	}
 	file, err := os.OpenFile(table.Name, os.O_RDONLY, 0600)
 	if err != nil {
-		return err
+		return fmt.Errorf("os.OpenFile: %w", err)
 	}
 	table.file = file
 	decoder := gob.NewDecoder(file)
@@ -115,7 +127,8 @@ func (table *SSTable[K, V]) Open() error {
 //
 // Should only be called after prior call to Open()
 func (table *SSTable[K, V]) Close() error {
-	table.Entries = []*SSTableEntry[K, V]{}
+	defer table.mut.Unlock()
+	table.Entries = []*Entry[K, V]{}
 	return table.file.Close()
 }
 
@@ -123,11 +136,11 @@ func (table *SSTable[K, V]) Close() error {
 //
 // Panics if attempt to search empty entries array
 func (table *SSTable[K, V]) Search(key K) (V, bool) {
-	assert(len(table.Entries) > 0, "Cannot search 0 entries")
+	assert.True(len(table.Entries) > 0, "Cannot search 0 entries")
 
 	idx, found := sort.Find(len(table.Entries), func(i int) int { return cmp.Compare(key, table.Entries[i].Key) })
 	if found {
 		return table.Entries[idx].Value, true
 	}
-	return SSTableEntry[K, V]{}.Value, false
+	return Entry[K, V]{}.Value, false
 }

@@ -1,4 +1,4 @@
-package lsm_tree
+package memtable
 
 import (
 	"encoding/json"

@@ -1,9 +1,11 @@
-package lsm_tree
+package sstable
 
 import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/dillonkmcquade/gostore/internal/filter"
 )
 
 func TestSSTableOverlaps(t *testing.T) {
@@ -11,7 +13,7 @@ func TestSSTableOverlaps(t *testing.T) {
 		t1 := &SSTable[int64, string]{
 			First: 0,
 			Last:  9,
-			Entries: []*SSTableEntry[int64, string]{
+			Entries: []*Entry[int64, string]{
 				{Operation: INSERT, Key: 0, Value: "value1"},
 				{Operation: INSERT, Key: 2, Value: "value2"},
 				{Operation: DELETE, Key: 9, Value: ""},
@@ -20,7 +22,7 @@ func TestSSTableOverlaps(t *testing.T) {
 		t2 := &SSTable[int64, string]{
 			First: 10,
 			Last:  19,
-			Entries: []*SSTableEntry[int64, string]{
+			Entries: []*Entry[int64, string]{
 				{Operation: INSERT, Key: 10, Value: "value1"},
 				{Operation: INSERT, Key: 12, Value: "value2"},
 				{Operation: DELETE, Key: 19, Value: ""},
@@ -35,7 +37,7 @@ func TestSSTableOverlaps(t *testing.T) {
 		t1 := &SSTable[int64, string]{
 			First: 0,
 			Last:  9,
-			Entries: []*SSTableEntry[int64, string]{
+			Entries: []*Entry[int64, string]{
 				{Operation: INSERT, Key: 0, Value: "value1"},
 				{Operation: INSERT, Key: 2, Value: "value2"},
 				{Operation: DELETE, Key: 9, Value: ""},
@@ -44,7 +46,7 @@ func TestSSTableOverlaps(t *testing.T) {
 		t2 := &SSTable[int64, string]{
 			First: 8,
 			Last:  19,
-			Entries: []*SSTableEntry[int64, string]{
+			Entries: []*Entry[int64, string]{
 				{Operation: INSERT, Key: 8, Value: "value1"},
 				{Operation: INSERT, Key: 12, Value: "value2"},
 				{Operation: DELETE, Key: 19, Value: ""},
@@ -109,7 +111,7 @@ func TestSSTableIO(t *testing.T) {
 		t1 := &SSTable[int64, string]{
 			Entries: entries,
 			Name:    filename,
-			Filter: NewBloomFilter[int64](&BloomFilterOpts{
+			Filter: filter.New[int64](&filter.Opts{
 				Size: 1000,
 				Path: tmp,
 			}),
@@ -128,7 +130,7 @@ func TestSSTableIO(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		t1.Filter.bitset = nil
+		t1.Filter.Clear()
 		err = t1.LoadFilter()
 		if err != nil {
 			t.Error(err)
@@ -210,8 +212,8 @@ func BenchmarkSSTableSearch(b *testing.B) {
 	})
 }
 
-func testEntries() []*SSTableEntry[int64, string] {
-	return []*SSTableEntry[int64, string]{
+func testEntries() []*Entry[int64, string] {
+	return []*Entry[int64, string]{
 		{
 			Operation: INSERT,
 			Key:       0,

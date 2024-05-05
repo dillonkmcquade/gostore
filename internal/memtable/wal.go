@@ -1,4 +1,4 @@
-package lsm_tree
+package memtable
 
 import (
 	"cmp"
@@ -8,6 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/dillonkmcquade/gostore/internal"
+	"github.com/dillonkmcquade/gostore/internal/ordered"
+	"github.com/dillonkmcquade/gostore/internal/sstable"
 )
 
 type Operation byte
@@ -17,6 +21,9 @@ const (
 	DELETE Operation = 0x44 // D
 )
 
+// The write ahead log is responsible for logging all memtable operations.
+// In the event of a crash, the log file will be used to recreate the previous memtable state.
+// Entries are json encoded in batches in a separate goroutine.
 type WAL[K cmp.Ordered, V any] struct {
 	file             *os.File
 	encoder          *json.Encoder
@@ -29,7 +36,7 @@ type WAL[K cmp.Ordered, V any] struct {
 
 // Generates a filename in the format WAL_UNIQUESTRING.dat
 func generateUniqueWALName() string {
-	uniqueString, err := generateRandomString(8)
+	uniqueString, err := internal.GenerateRandomString(8)
 	if err != nil {
 		slog.Error("generateUniqueWALName: error generating random string")
 		panic(err)
@@ -59,6 +66,8 @@ func newWal[K cmp.Ordered, V any](filename string, write_size int) (*WAL[K, V], 
 func (self *WAL[K, V]) waitForWrites(batchSize int) {
 	batch := make([]*LogEntry[K, V], batchSize)
 	count := 0
+
+	// Finish batch if incomplete on program exit
 	defer func() {
 		err := self.encoder.Encode(batch[:count])
 		if err != nil {
@@ -72,6 +81,8 @@ func (self *WAL[K, V]) waitForWrites(batchSize int) {
 		self.file.Close()
 		self.wg.Done()
 	}()
+
+	// Batch queue
 	for entry := range self.writeChan {
 		batch[count] = entry
 		count++
@@ -100,16 +111,20 @@ func (self *WAL[K, V]) waitForWrites(batchSize int) {
 // Discards the contents of the current WAL
 func (self *WAL[K, V]) Discard() error {
 	self.mut.Lock()
+	defer self.mut.Unlock()
 	err := self.file.Truncate(0)
 	if err != nil {
 		slog.Error("error truncating file", "filename", self.file.Name())
-		return err
+		return fmt.Errorf("file.Truncate: %w", err)
 	}
 	_, err = self.file.Seek(0, 0)
-	self.mut.Unlock()
-	return err
+	if err != nil {
+		return fmt.Errorf("file.Seek: %w", err)
+	}
+	return nil
 }
 
+// Returns the size in bytes of the Write-Ahead Log
 func (self *WAL[K, V]) Size() (int64, error) {
 	fd, err := self.file.Stat()
 	if err != nil {
@@ -132,7 +147,7 @@ func (self *WAL[K, V]) Write(key K, val V) error {
 	return nil
 }
 
-// Close closes the Write-Ahead Log file.
+// Close closes the writeChan, and waits for the queued writes to finish.
 func (self *WAL[K, V]) Close() error {
 	close(self.writeChan)
 	self.wg.Wait()
@@ -140,25 +155,30 @@ func (self *WAL[K, V]) Close() error {
 }
 
 type LogEntry[K cmp.Ordered, V any] struct {
-	Operation Operation
 	Key       K
 	Value     V
+	Operation Operation
 }
 
-func (self *LogEntry[K, V]) Apply(rbt TreeMap[K, V]) {
-	rbt.Put(self.Key, self.Value)
+func (self *LogEntry[K, V]) Apply(rbt ordered.Collection[K, *sstable.Entry[K, V]]) {
+	entry := &sstable.Entry[K, V]{
+		Key:       self.Key,
+		Value:     self.Value,
+		Operation: sstable.Operation(self.Operation),
+	}
+	rbt.Put(self.Key, entry)
 }
 
 // LogApplyErr is returned when a log entry failed to be applied to be applied.
 // This could indicate that some data was lost after a crash.
 type LogApplyErr[K cmp.Ordered, V any] struct {
-	Entry *LogEntry[K, V]
 	Cause error
 }
 
 func (l *LogApplyErr[K, V]) Error() string {
-	if l.Entry == nil {
-		return fmt.Sprintf("Log apply error: %v", l.Cause)
-	}
-	return fmt.Sprintf("Error applying log entry operation '%v' with key %v and value %v: %v", l.Entry.Operation, l.Entry.Key, l.Entry.Value, l.Cause)
+	return fmt.Sprintf("Log apply error: %v", l.Cause)
+}
+
+func (l *LogApplyErr[K, V]) Unwrap() error {
+	return l.Cause
 }

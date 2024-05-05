@@ -1,4 +1,4 @@
-package lsm_tree
+package filter
 
 import (
 	"testing"
@@ -6,8 +6,8 @@ import (
 
 func TestBloomFilterAdd(t *testing.T) {
 	t.Run("Add int64", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 1000}
-		bf := NewBloomFilter[int64](opts)
+		opts := &Opts{Size: 1000}
+		bf := New[int64](opts)
 
 		integers := []int64{42, 123, 987}
 		for _, num := range integers {
@@ -29,8 +29,8 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add int32", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100}
-		bf := NewBloomFilter[int32](opts)
+		opts := &Opts{Size: 100}
+		bf := New[int32](opts)
 
 		integers := []int32{42, 123, 987}
 		for _, num := range integers {
@@ -52,8 +52,8 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add string", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100}
-		filter := NewBloomFilter[string](opts)
+		opts := &Opts{Size: 100}
+		filter := New[string](opts)
 
 		strings := []string{"hello", "world", "bloom"}
 		for _, str := range strings {
@@ -75,8 +75,8 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add 15000", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 100000}
-		filter := NewBloomFilter[int64](opts)
+		opts := &Opts{Size: 100000}
+		filter := New[int64](opts)
 
 		for i := 0; i < 15000; i++ {
 			filter.Add(int64(i))
@@ -90,8 +90,8 @@ func TestBloomFilterAdd(t *testing.T) {
 	})
 
 	t.Run("Add 30000", func(t *testing.T) {
-		opts := &BloomFilterOpts{Size: 300000}
-		filter := NewBloomFilter[int64](opts)
+		opts := &Opts{Size: 300000}
+		filter := New[int64](opts)
 
 		for i := 0; i < 30000; i++ {
 			filter.Add(int64(i))
@@ -108,8 +108,8 @@ func TestBloomFilterAdd(t *testing.T) {
 func TestBloomIO(t *testing.T) {
 	t.Run("Save bloom to file", func(t *testing.T) {
 		tmp := t.TempDir()
-		opts := &BloomFilterOpts{Size: 1000, Path: tmp}
-		filter := NewBloomFilter[int64](opts)
+		opts := &Opts{Size: 1000, Path: tmp}
+		filter := New[int64](opts)
 
 		keys := []int64{50, 70, 90}
 		for _, key := range keys {

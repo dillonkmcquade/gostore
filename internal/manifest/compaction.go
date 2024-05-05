@@ -1,0 +1,219 @@
+package manifest
+
+import (
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/dillonkmcquade/gostore/internal/filter"
+	"github.com/dillonkmcquade/gostore/internal/sstable"
+)
+
+// Compaction primitives:
+//
+// https://arxiv.org/pdf/2202.04522v2.pdf
+//
+// 1. Compaction Trigger - When to re-organize the data layout?
+//		- Level saturations(size) <-
+//		- # of sorted runs
+//		- File staleness
+//		- Space amplification
+//		- Tombstone-TTL <- Implement later
+// 2. Data Layout - How to layout data physically on storage?
+//		- Tiering
+//		- 1-leveling
+//		- L-leveling
+//		- Hybrid <-
+// 3. Compaction Granularity - How much data to move at a time?
+//		- Level
+//		- Sorted runs
+//		- File
+//		- Multiple files <-
+// 4. Data Movement Policy - Which block of data to be moved during reorganization?
+//		- Round-robin
+//		- Least overlapping parent
+//		- Least overlapping grandparent
+//		- Coldest
+//		- Oldest <-
+//		- Tombstone density
+//		- Tombstone-TTL
+
+// type Controller[K cmp.Ordered, V any] interface {
+// 	Compact(*Manifest[K, V])
+// 	Trigger(*Level[K, V]) bool
+// }
+//
+// type CompactionImpl[K cmp.Ordered, V any] struct {
+// 	// LevelPaths       []string
+// 	BloomPath        string
+// 	SSTable_max_size int
+// }
+
+// Returns compaction task if level triggers a compaction
+func (c *Manifest[K, V]) Trigger(level *Level[K, V]) bool {
+	return level.Size >= level.MaxSize
+}
+
+// The goal of L0 compaction is to insert the unsorted collection of sorted tables into the sorted L1.
+//
+// All tables from L0 are merged->split->sync->L1
+func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
+	slog.Debug("============ Level 0 Compaction =============")
+	// Merge all tables
+	merged := sstable.Merge(level.Tables...)
+
+	// Split
+	split := sstable.Split(merged, man.SSTable_max_size, &sstable.Opts[K, V]{
+		BloomOpts: &filter.Opts{
+			Size: uint64(man.SSTable_max_size * 10),
+			Path: man.BloomPath,
+		},
+	})
+
+	var wg sync.WaitGroup
+	// Write files and add to manifest
+	for _, splitTable := range split {
+		wg.Add(1)
+		go func(tbl *sstable.SSTable[K, V]) {
+			tbl.Name = filepath.Join(man.Levels[1].Path, sstable.GenerateUniqueSegmentName(tbl.CreatedOn))
+
+			_, err := tbl.Sync()
+			if err != nil {
+				slog.Error("Failed to sync table", "filename", tbl.Name)
+				panic(err)
+			}
+
+			err = tbl.SaveFilter()
+			if err != nil {
+				slog.Error("Failed to save filter", "filename", tbl.Filter.Name)
+				panic(err)
+			}
+
+			err = man.AddTable(tbl, 1)
+			if err != nil {
+				slog.Error("Failed to add table to level 1", "filename", tbl.Name)
+				panic(err)
+			}
+			wg.Done()
+		}(splitTable)
+	}
+
+	for _, tbl := range level.Tables {
+		wg.Add(1)
+		go func(t *sstable.SSTable[K, V]) {
+			err := os.Remove(t.Name)
+			if err != nil {
+				slog.Warn("Failure to remove table", "filename", t.Name)
+			}
+			err = os.Remove(t.Filter.Name)
+			if err != nil {
+				slog.Warn("Failure to remove filter", "filename", t.Filter.Name)
+			}
+			wg.Done()
+		}(tbl)
+	}
+	wg.Wait()
+
+	err := man.ClearLevel(level.Number)
+	if err != nil {
+		slog.Error("Failed to clear level")
+		panic(err)
+	}
+}
+
+// Merge oldest table from upper level into overlapping lower level tables
+func (man *Manifest[K, V]) lower_level_compact(level *Level[K, V]) {
+	// Choose oldest table
+	table := sstable.Oldest(level.Tables)
+	// find tables in lowerlevel that overlap with table in upper level
+	overlaps := sstable.Overlapping(table, man.Levels[level.Number+1].Tables)
+
+	// if lower level is empty, simply move the table from upper level to lower level
+	if len(overlaps) == 0 {
+		newLocation := filepath.Join(man.Levels[level.Number+1].Path, filepath.Base(table.Name))
+
+		os.Rename(table.Name, newLocation)
+
+		table.Name = newLocation
+
+		// Update manifest
+		man.AddTable(table, level.Number+1)
+		man.RemoveTable(table, level.Number)
+		return
+	}
+
+	merged := sstable.Merge(append(overlaps, table)...)
+
+	// Split merged table into smaller sizes
+	split := sstable.Split(merged, man.SSTable_max_size, &sstable.Opts[K, V]{
+		BloomOpts: &filter.Opts{
+			Size: uint64(man.SSTable_max_size * 10),
+			Path: man.BloomPath,
+		},
+	})
+
+	// Write files and add to manifest
+	for _, splitTable := range split {
+		splitTable.Name = filepath.Join(man.Levels[level.Number+1].Path, fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
+
+		_, err := splitTable.Sync()
+		if err != nil {
+			slog.Error("Failed to sync table", "filename", splitTable.Name)
+			panic(err)
+		}
+		err = splitTable.SaveFilter()
+		if err != nil {
+			slog.Error("Failed to save filter", "filename", splitTable.Filter.Name)
+			panic(err)
+		}
+		err = man.AddTable(splitTable, level.Number+1)
+		if err != nil {
+			slog.Error("Failed to add table to level 1", "filename", splitTable.Name)
+			panic(err)
+		}
+	}
+
+	// Cleanup tables from lowerlevel
+	for _, overlapping_table := range overlaps {
+		err := man.RemoveTable(overlapping_table, level.Number+1)
+		if err != nil {
+			slog.Error("Failure to remove table", "filename", overlapping_table.Name)
+			panic(err)
+		}
+	}
+
+	// Cleanup table from upper level
+	err := man.RemoveTable(table, level.Number)
+	if err != nil {
+		slog.Error("Failure to remove table", "filename", table.Name)
+		panic(err)
+	}
+}
+
+func (man *Manifest[K, V]) Compact() {
+	man.compmut.Lock()
+	defer man.compmut.Unlock()
+	allCompacted := true
+	for _, level := range man.Levels {
+		if man.Trigger(level) {
+			allCompacted = false
+			break
+		}
+	}
+
+	if allCompacted {
+		return
+	}
+
+	for _, level := range man.Levels {
+		if man.Trigger(level) {
+			if level.Number == 0 {
+				man.level_0_compact(level)
+			} else {
+				man.lower_level_compact(level)
+			}
+		}
+	}
+}

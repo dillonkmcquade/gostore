@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 
-	lsm "github.com/dillonkmcquade/gostore/internal/lsm_tree"
+	lsm "github.com/dillonkmcquade/gostore/internal/lsm"
 	"github.com/dillonkmcquade/gostore/internal/pb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,14 +11,12 @@ import (
 
 type GoStoreRPC struct {
 	pb.UnimplementedGoStoreServer
-	tree lsm.LSMTree[uint64, []byte]
+	tree lsm.LSM[uint64, []byte]
 }
 
 func New() *GoStoreRPC {
-	opts := &lsm.LSMOpts{
-		ManifestOpts: &lsm.ManifestOpts{},
-		MemTableOpts: &lsm.GoStoreMemTableOpts{},
-	}
+	opts := lsm.NewDefaultLSMOpts("")
+
 	return &GoStoreRPC{tree: lsm.New[uint64, []byte](opts)}
 }
 

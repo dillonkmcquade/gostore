@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/dillonkmcquade/gostore/internal/filter"
 )
 
 var t1 = &SSTable[int32, string]{
@@ -12,7 +14,7 @@ var t1 = &SSTable[int32, string]{
 	Entries: []*Entry[int32, string]{
 		{Operation: INSERT, Key: 1, Value: "value1"},
 		{Operation: INSERT, Key: 2, Value: "value2"},
-		{Operation: DELETE, Key: 3, Value: ""},
+		{Operation: INSERT, Key: 3, Value: "value3"},
 	},
 }
 
@@ -20,9 +22,9 @@ var t2 = &SSTable[int32, string]{
 	First: 4,
 	Last:  9,
 	Entries: []*Entry[int32, string]{
-		{Operation: INSERT, Key: 4, Value: "value1"},
-		{Operation: INSERT, Key: 5, Value: "value2"},
-		{Operation: DELETE, Key: 9, Value: ""},
+		{Operation: INSERT, Key: 4, Value: "value4"},
+		{Operation: INSERT, Key: 5, Value: "value5"},
+		{Operation: INSERT, Key: 9, Value: "value9"},
 	},
 }
 
@@ -110,11 +112,54 @@ func TestFindOldestTable(t *testing.T) {
 
 // TODO
 func TestMerge(t *testing.T) {
+	total := 0
+	for _, tbl := range []*SSTable[int32, string]{t1, t2} {
+		total += len(tbl.Entries)
+	}
+
+	merged := Merge(t1, t2)
+
+	if len(merged.Entries) != total {
+		t.Errorf("Should have %v entries, found %v", total, len(merged.Entries))
+	}
 }
 
 // TODO
 func TestSplit(t *testing.T) {
+	tmp := t.TempDir()
+	tbl := &SSTable[int32, string]{
+		First: 4,
+		Last:  99,
+		Entries: []*Entry[int32, string]{
+			{Operation: INSERT, Key: 4, Value: "value4"},
+			{Operation: INSERT, Key: 5, Value: "value5"},
+			{Operation: INSERT, Key: 19, Value: "value9"},
+			{Operation: INSERT, Key: 29, Value: "value9"},
+			{Operation: INSERT, Key: 39, Value: "value9"},
+			{Operation: INSERT, Key: 49, Value: "value9"},
+		},
+	}
+	split := Split(tbl, 2, &Opts[int32, string]{
+		BloomOpts: &filter.Opts{
+			Size: 100,
+			Path: tmp,
+		},
+		DestDir: tmp,
+	})
+
+	if len(split) != 3 {
+		t.Errorf("Should have 3 tables, found %v", len(split))
+	}
 }
 
 func TestGenerateUniqueSegmentName(t *testing.T) {
+	timestamp := time.Now()
+	name := GenerateUniqueSegmentName(timestamp)
+	for i := 0; i < 1000; i++ {
+		timestamp2 := time.Now()
+		name2 := GenerateUniqueSegmentName(timestamp2)
+		if name2 == name {
+			t.Error("Should be different")
+		}
+	}
 }

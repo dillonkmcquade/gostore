@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/dillonkmcquade/gostore/internal/filter"
 	"github.com/dillonkmcquade/gostore/internal/manifest"
@@ -25,13 +24,8 @@ type LSM[K cmp.Ordered, V any] interface {
 }
 
 type GoStore[K cmp.Ordered, V any] struct {
-	// The current memtable
-	memTable memtable.MemTable[K, V]
-
-	// Filenames of sstables ordered oldest to most recent
-	manifest *manifest.Manifest[K, V]
-
-	mut sync.RWMutex
+	memTable memtable.MemTable[K, V]  // The current memtable
+	manifest *manifest.Manifest[K, V] // In-memory representation of on-disk data layout (levels, tables)
 }
 
 type LSMOpts struct {
@@ -143,143 +137,95 @@ func NewTestLSMOpts(gostorepath string) *LSMOpts {
 	}
 }
 
+type dirMaker struct {
+	err error
+}
+
+func (maker *dirMaker) mkDir(filepath string, perm fs.FileMode) {
+	if maker.err != nil {
+		return
+	}
+	maker.err = os.MkdirAll(filepath, perm)
+}
+
 // Create the necessary directories
-func createAppFiles(opts *LSMOpts) {
+func createAppFiles(opts *LSMOpts) error {
+	d := &dirMaker{}
 	for _, dir := range opts.ManifestOpts.LevelPaths {
-		err := os.MkdirAll(dir, 0750)
-		if err != nil {
-			log.Fatalf("error while creating directory %v: %v", dir, err)
-		}
+		d.mkDir(dir, 0750)
 	}
-	err := os.MkdirAll(opts.MemTableOpts.FilterOpts.Path, 0750)
-	if err != nil {
-		log.Fatalf("error while creating directory %v: %v", opts.MemTableOpts.FilterOpts.Path, err)
-	}
+	d.mkDir(opts.MemTableOpts.FilterOpts.Path, 0750)
+	return d.err
 }
 
 // Creates a new LSMTree. Creates application directory if it does not exist.
 //
 // ***Will exit with non-zero status if error is returned during any of the initialization steps.
-func New[K cmp.Ordered, V any](opts *LSMOpts) LSM[K, V] {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("Panic while closing GoStore, recovered")
-		}
-	}()
+func New[K cmp.Ordered, V any](opts *LSMOpts) (LSM[K, V], error) {
+	var errs []error
+
 	// Create application directories
-	createAppFiles(opts)
+	err := createAppFiles(opts)
+	if err != nil {
+		errs = append(errs, err)
+	}
 
 	// DATA LAYOUT
 	manifest, err := manifest.New[K, V](opts.ManifestOpts)
 	if err != nil {
-		slog.Error("LSM tree: error creating new manifest")
-		panic(fmt.Errorf("manifest.New: %w", err))
+		errs = append(errs, err)
 	}
 
 	// MEMTABLE
 	mem, err := memtable.New[K, V](opts.MemTableOpts)
 	if err != nil {
-		var lae *memtable.LogApplyErr[K, V]
-		if errors.As(err, &lae) {
-			slog.Error("ERROR WHILE RECREATING DATABASE STATE FROM WRITE AHEAD LOG.")
-			slog.Error("POSSIBLE DATA LOSS HAS OCCURRED")
-			panic(fmt.Errorf("memtable.New: %w", lae))
-		}
-		slog.Error("Unknown error occurred while creating memtable")
-		panic(fmt.Errorf("memtable.New: %w", err))
+		errs = append(errs, err)
 	}
 
-	return &GoStore[K, V]{memTable: mem, manifest: manifest}
+	gostore := &GoStore[K, V]{memTable: mem, manifest: manifest}
+	go gostore.waitForFlush()
+	return gostore, errors.Join(errs...)
+}
+
+func (store *GoStore[K, V]) waitForFlush() {
+	for table := range store.memTable.FlushedTables() {
+		slog.Debug("Received flushed table, adding to L0")
+		store.manifest.AddTable(table, 0)
+	}
 }
 
 // Write the Key-Value pair to the memtable
 func (store *GoStore[K, V]) Write(key K, val V) error {
 	err := store.memTable.Put(key, val)
 	if err != nil {
-		slog.Error("error executing memtable put", "key", key, "value", val)
-		slog.Error(err.Error())
-		return ErrInternal
+		return fmt.Errorf("memTable.Put: %w", err)
 	}
-	store.mut.Lock()
-	defer store.mut.Unlock()
-	for _, table := range store.memTable.Purge() {
-		store.manifest.AddTable(table, 0)
-	}
-	store.manifest.Compact()
 	return nil
 }
 
 // Read the value from the given key. Will return error if value is not found.
 func (store *GoStore[K, V]) Read(key K) (V, error) {
-	store.mut.Lock()
-	defer store.mut.Unlock()
-
 	// Read from memtable first
 	if val, ok := store.memTable.Get(key); ok {
 		return val, nil
 	}
 
-	level0 := store.manifest.Levels[0]
-
-	// Check unsorted level 0
-	// Last index in level0 tables is the most recent, so we read in descending order
-	for i := len(level0.Tables) - 1; i >= 0; i-- {
-		tbl := level0.Tables[i]
-
-		if tbl.Filter.Has(key) {
-			err := tbl.Open()
-			if err != nil {
-				slog.Error("Read: error opening table", "filename", tbl.Name)
-				slog.Error(err.Error())
-				return ordered.Node[K, V]{}.Value, fmt.Errorf("tbl.Open: %w", err)
-			}
-
-			defer func() {
-				err := tbl.Close()
-				if err != nil {
-					slog.Error("error closing table")
-				}
-			}()
-
-			if val, found := tbl.Search(key); found {
-				return val, nil
-			}
-		}
+	// Search sstables
+	val, err := store.manifest.Search(key)
+	if err != nil {
+		return ordered.Node[K, V]{}.Value, fmt.Errorf("manifest.Search: %w", err)
 	}
-
-	// binary search sorted levels 1:3 sequentially
-	for _, level := range store.manifest.Levels[1:] {
-		slog.Debug("Reading", "level", level.Number, "key", key, "#tables", len(level.Tables))
-		if i, found := level.BinarySearch(key); found {
-			if level.Tables[i].Filter.Has(key) {
-				err := level.Tables[i].Open()
-				if err != nil {
-					slog.Error("Read: error opening table", "filename", level.Tables[i].Name)
-					slog.Error(err.Error())
-					return ordered.Node[K, V]{}.Value, fmt.Errorf("tbl.Open: %w", err)
-				}
-				defer level.Tables[i].Close()
-				if val, found := level.Tables[i].Search(key); found {
-					return val, nil
-				}
-			}
-		}
-	}
-	return ordered.Node[K, V]{}.Value, ErrNotFound
+	return val, nil
 }
 
 // Delete a key from the DB
 func (store *GoStore[K, V]) Delete(key K) error {
-	store.mut.Lock()
-	defer store.mut.Unlock()
 	store.memTable.Delete(key)
 	return nil
 }
 
 // Close closes all associated resources
 func (store *GoStore[K, V]) Close() error {
-	store.mut.Lock()
-	defer store.mut.Unlock()
 	store.memTable.Close()
 	return store.manifest.Close()
 }

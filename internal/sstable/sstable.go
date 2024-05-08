@@ -4,15 +4,15 @@ import (
 	"cmp"
 	"encoding/gob"
 	"fmt"
-	"log/slog"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/dillonkmcquade/gostore/internal/assert"
 	"github.com/dillonkmcquade/gostore/internal/filter"
+	"github.com/dillonkmcquade/gostore/internal/ordered"
 )
 
 type Operation byte
@@ -31,6 +31,13 @@ type Entry[K cmp.Ordered, V any] struct {
 
 func (t Entry[K, V]) String() string {
 	return fmt.Sprintf("{%v,%v}", t.Key, t.Value)
+}
+
+func (e *Entry[K, V]) Apply(c interface{}) {
+	rbt := c.(*ordered.RedBlackTree[K, *Entry[K, V]])
+	if e.Operation == INSERT {
+		rbt.Put(e.Key, e)
+	}
 }
 
 type Opts[K cmp.Ordered, V any] struct {
@@ -59,7 +66,6 @@ type SSTable[K cmp.Ordered, V any] struct {
 	First     K                      // First key in range
 	Last      K                      // Last key in range
 	CreatedOn time.Time              // Timestamp
-	mut       sync.Mutex
 }
 
 // Test if table key range overlaps the key range of another
@@ -68,33 +74,54 @@ func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
 		(table.Last >= anotherTable.First && table.Last <= anotherTable.Last)
 }
 
+func (table *SSTable[K, V]) writeTo(writer io.Writer) (int64, error) {
+	encoder := gob.NewEncoder(writer)
+	err := encoder.Encode(table.Entries)
+	return 0, err
+}
+
+func (table *SSTable[K, V]) getFile() (*os.File, error) {
+	if table.file != nil {
+		return table.file, nil
+	}
+	var err error
+	table.file, err = os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0600)
+	return table.file, err
+}
+
 // Sync flushes all in-memory entries to stable storage
 func (table *SSTable[K, V]) Sync() (int64, error) {
-	tableFile, err := os.OpenFile(table.Name, os.O_RDWR|os.O_CREATE, 0600)
+	fd, err := table.getFile()
 	if err != nil {
 		return 0, err
 	}
-	defer tableFile.Close()
+	defer fd.Close()
 
-	encoder := gob.NewEncoder(tableFile)
-	err = encoder.Encode(table.Entries)
+	_, err = table.writeTo(fd)
 	if err != nil {
 		return 0, err
 	}
-	err = tableFile.Sync()
+	err = fd.Sync()
 	if err != nil {
 		return 0, err
 	}
-	table.Entries = []*Entry[K, V]{}
-	table.file = tableFile
-	fd, err := tableFile.Stat()
+	table.clearEntries()
+	err = table.updateSize()
+	return table.Size, err
+}
+
+func (table *SSTable[K, V]) updateSize() error {
+	fd, err := table.file.Stat()
 	if err != nil {
-		return 0, err
+		return err
 	}
 	size := fd.Size()
 	table.Size = size
+	return nil
+}
 
-	return size, err
+func (table *SSTable[K, V]) clearEntries() {
+	table.Entries = []*Entry[K, V]{}
 }
 
 func (table *SSTable[K, V]) SaveFilter() error {
@@ -109,27 +136,28 @@ func (table *SSTable[K, V]) LoadFilter() error {
 //
 // *** You must call Close() after opening table
 func (table *SSTable[K, V]) Open() error {
-	table.mut.Lock()
 	if len(table.Entries) > 0 {
-		slog.Warn("Table entries should be empty before calling open")
+		// slog.Warn("Table entries should be empty before calling open")
 		return nil
 	}
-	file, err := os.OpenFile(table.Name, os.O_RDONLY, 0600)
+	var err error
+	table.file, err = os.Open(table.Name)
 	if err != nil {
 		return fmt.Errorf("os.OpenFile: %w", err)
 	}
-	table.file = file
-	decoder := gob.NewDecoder(file)
-	return decoder.Decode(&table.Entries)
+	return gob.NewDecoder(table.file).Decode(&table.Entries)
 }
 
 // Clears entries, unlocks table, and closes file
 //
 // Should only be called after prior call to Open()
 func (table *SSTable[K, V]) Close() error {
-	defer table.mut.Unlock()
-	table.Entries = []*Entry[K, V]{}
-	return table.file.Close()
+	table.clearEntries()
+	err := table.file.Close()
+	if err != nil {
+		return fmt.Errorf("file.Close: %w", err)
+	}
+	return nil
 }
 
 // Search searches for a key in the SSTable.

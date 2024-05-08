@@ -16,8 +16,11 @@ type GoStoreRPC struct {
 
 func New() *GoStoreRPC {
 	opts := lsm.NewDefaultLSMOpts("")
-
-	return &GoStoreRPC{tree: lsm.New[uint64, []byte](opts)}
+	tree, err := lsm.New[uint64, []byte](opts)
+	if err != nil {
+		panic(err)
+	}
+	return &GoStoreRPC{tree: tree}
 }
 
 func (r *GoStoreRPC) Close() {

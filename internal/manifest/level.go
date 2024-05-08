@@ -3,7 +3,6 @@ package manifest
 import (
 	"cmp"
 	"sort"
-	"sync"
 
 	"github.com/dillonkmcquade/gostore/internal/assert"
 	"github.com/dillonkmcquade/gostore/internal/sstable"
@@ -15,11 +14,13 @@ type Level[K cmp.Ordered, V any] struct {
 	Number  int
 	Size    int64
 	MaxSize int64
-	mut     sync.Mutex
+	// mut     sync.RWMutex
 }
 
 // Binary search the current level for table that has range overlapping key
 func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
+	// l.mut.RLock()
+	// defer l.mut.RUnlock()
 	low := 0
 	high := len(l.Tables) - 1
 
@@ -39,8 +40,8 @@ func (l *Level[K, V]) BinarySearch(key K) (int, bool) {
 }
 
 func (l *Level[K, V]) Add(table *sstable.SSTable[K, V]) {
-	l.mut.Lock()
-	defer l.mut.Unlock()
+	// l.mut.Lock()
+	// defer l.mut.Unlock()
 	if len(l.Tables) == 0 {
 		l.Tables = append(l.Tables, table)
 		l.Size += table.Size
@@ -53,8 +54,8 @@ func (l *Level[K, V]) Add(table *sstable.SSTable[K, V]) {
 
 func (l *Level[K, V]) Remove(table *sstable.SSTable[K, V]) {
 	assert.True(len(l.Tables) > 0, "Expected table len > 0, found %v", len(l.Tables))
-	l.mut.Lock()
-	defer l.mut.Unlock()
+	// l.mut.Lock()
+	// defer l.mut.Unlock()
 
 	index := sort.Search(len(l.Tables), func(i int) bool { return l.Tables[i].First >= table.First && l.Tables[i].Last >= table.Last })
 	assert.True(index < len(l.Tables), "Index %v out of range %v", index, len(l.Tables))
@@ -66,8 +67,8 @@ func (l *Level[K, V]) Remove(table *sstable.SSTable[K, V]) {
 
 // Assigns an empty array to Tables and sets size to 0
 func (l *Level[K, V]) Clear() {
-	l.mut.Lock()
-	defer l.mut.Unlock()
+	// l.mut.Lock()
+	// defer l.mut.Unlock()
 	l.Tables = []*sstable.SSTable[K, V]{}
 	l.Size = 0
 }

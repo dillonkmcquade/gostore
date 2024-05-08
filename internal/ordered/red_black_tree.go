@@ -3,6 +3,8 @@ package ordered
 import (
 	"cmp"
 	"fmt"
+
+	"github.com/dillonkmcquade/gostore/internal/wal"
 )
 
 // A key-value balanced tree data structure
@@ -95,6 +97,9 @@ func sortedKeyList[K cmp.Ordered, V any](root *Node[K, V], list *[]K) {
 	sortedKeyList(root.left, list)
 	*list = append(*list, root.Key)
 	sortedKeyList(root.right, list)
+}
+
+func (rbt *RedBlackTree[K, V]) Restore(entry wal.LogEntry) {
 }
 
 func (rbt *RedBlackTree[K, V]) Values() Iterator[V] {

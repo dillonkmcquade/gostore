@@ -10,24 +10,32 @@ import (
 func TestLSMNew(t *testing.T) {
 	t.Run("Test opts", func(t *testing.T) {
 		tmp := t.TempDir()
-		tree := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		if err != nil {
+			t.Error(err)
+		}
 		defer tree.Close()
 	})
 
 	t.Run("Default opts", func(t *testing.T) {
 		tmp := t.TempDir()
-		tree := New[int64, any](NewDefaultLSMOpts(tmp))
+		tree, err := New[int64, any](NewDefaultLSMOpts(tmp))
+		if err != nil {
+			t.Error(err)
+		}
 		defer tree.Close()
 	})
 
 	t.Run("Non-existing path", func(t *testing.T) {
 		defer func() {
 			if r := recover(); r == nil {
-				t.Error("Should panic")
+				t.Error("should panic")
 			}
 		}()
-
-		_ = New[int64, any](NewTestLSMOpts(""))
+		_, err := New[int64, any](NewTestLSMOpts(""))
+		if err != nil {
+			t.Error(err)
+		}
 	})
 }
 
@@ -36,28 +44,41 @@ func TestLSMWrite(t *testing.T) {
 	t.Run("1000", func(t *testing.T) {
 		t.Parallel()
 		tmp := t.TempDir()
-		tree := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		if err != nil {
+			t.Error(err)
+		}
 		defer tree.Close()
 		var wg sync.WaitGroup
 		for i := 0; i < 1000; i++ {
 			wg.Add(1)
 			go func(i int) {
-				tree.Write(int64(i), "test")
+				err := tree.Write(int64(i), "test")
+				if err != nil {
+					t.Error(err)
+				}
 				wg.Done()
 			}(i)
 		}
 		wg.Wait()
 		for i := 0; i < 1000; i++ {
-			_, err := tree.Read(int64(i))
-			if err != nil {
-				t.Errorf("Should be found: %v", i)
-			}
+			wg.Add(1)
+			go func(i int) {
+				_, err := tree.Read(int64(i))
+				if err != nil {
+					t.Errorf("Should be found: %v", i)
+				}
+			}(i)
 		}
+		wg.Done()
 	})
 	t.Run("1001", func(t *testing.T) {
 		t.Parallel()
 		tmp := t.TempDir()
-		tree := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		if err != nil {
+			t.Error(err)
+		}
 		defer tree.Close()
 		var wg sync.WaitGroup
 		for i := 0; i < 1001; i++ {
@@ -78,7 +99,10 @@ func TestLSMWrite(t *testing.T) {
 	t.Run("1999", func(t *testing.T) {
 		t.Parallel()
 		tmp := t.TempDir()
-		tree := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		if err != nil {
+			t.Error(err)
+		}
 		defer tree.Close()
 		var wg sync.WaitGroup
 		for i := 0; i < 1999; i++ {
@@ -100,7 +124,10 @@ func TestLSMWrite(t *testing.T) {
 
 func TestLSMRead(t *testing.T) {
 	tmp := t.TempDir()
-	tree := New[int64, any](NewTestLSMOpts(tmp))
+	tree, err := New[int64, any](NewTestLSMOpts(tmp))
+	if err != nil {
+		t.Error(err)
+	}
 	defer tree.Close()
 	var wg sync.WaitGroup
 	for i := 0; i < 11001; i++ {
@@ -111,7 +138,7 @@ func TestLSMRead(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	_, err := tree.Read(11000)
+	_, err = tree.Read(11000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -122,7 +149,10 @@ func TestLSMFlush(t *testing.T) {
 	tmp := t.TempDir()
 	opts := NewTestLSMOpts(tmp)
 	opts.MemTableOpts.Max_size = 5
-	tree := New[int64, any](opts)
+	tree, err := New[int64, any](opts)
+	if err != nil {
+		t.Error(err)
+	}
 	defer tree.Close()
 
 	var wg sync.WaitGroup
@@ -147,7 +177,10 @@ func TestCompactedRead(t *testing.T) {
 	tmp := t.TempDir()
 
 	opts := NewTestLSMOpts(tmp)
-	tree := New[int64, string](opts)
+	tree, err := New[int64, string](opts)
+	if err != nil {
+		t.Error(err)
+	}
 
 	defer tree.Close()
 

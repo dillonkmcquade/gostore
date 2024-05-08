@@ -8,6 +8,22 @@ import (
 	"github.com/dillonkmcquade/gostore/internal/sstable"
 )
 
+func newManifest(t *testing.T) (*Manifest[int64, string], error) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "manifest.json")
+	opts := &Opts{
+		Path: path,
+		LevelPaths: []string{
+			filepath.Join(tmp, "l0"), filepath.Join(tmp, "l1"), filepath.Join(tmp, "l2"), filepath.Join(tmp, "l3"),
+		},
+		Num_levels:       4,
+		Level0_max_size:  500000,
+		SSTable_max_size: 1000,
+		BloomPath:        filepath.Join(tmp, "filters"),
+	}
+	return New[int64, string](opts)
+}
+
 func TestNewManifest(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "manifest.json")
@@ -28,16 +44,96 @@ func TestNewManifest(t *testing.T) {
 	defer man.Close()
 }
 
-// TODO
 func TestManifestAddTable(t *testing.T) {
+	man, err := newManifest(t)
+	if err != nil {
+		t.Error(err)
+	}
+	t2 := &sstable.SSTable[int64, string]{
+		First:     10,
+		Last:      19,
+		Name:      filepath.Join(t.TempDir(), "test_segment.segment"),
+		Size:      100,
+		CreatedOn: time.Now(),
+		Entries: []*sstable.Entry[int64, string]{
+			{Operation: sstable.INSERT, Key: 10, Value: "value1"},
+			{Operation: sstable.INSERT, Key: 12, Value: "value2"},
+			{Operation: sstable.DELETE, Key: 19, Value: ""},
+		},
+	}
+
+	err = man.AddTable(t2, 0)
+	if err != nil {
+		t.Errorf("man.AddTable: %v", err.Error())
+	}
+
+	if len(man.Levels[0].Tables) != 1 {
+		t.Error("Level zero should be of length 1")
+	}
+	if man.Levels[0].Size != 100 {
+		t.Error("Size should be 100")
+	}
 }
 
-// TODO
 func TestManifestRemoveTable(t *testing.T) {
+	man, err := newManifest(t)
+	if err != nil {
+		t.Error(err)
+	}
+	t2 := &sstable.SSTable[int64, string]{
+		First:     10,
+		Last:      19,
+		Name:      filepath.Join(t.TempDir(), "test_segment.segment"),
+		Size:      100,
+		CreatedOn: time.Now(),
+		Entries: []*sstable.Entry[int64, string]{
+			{Operation: sstable.INSERT, Key: 10, Value: "value1"},
+			{Operation: sstable.INSERT, Key: 12, Value: "value2"},
+			{Operation: sstable.DELETE, Key: 19, Value: ""},
+		},
+	}
+
+	err = man.AddTable(t2, 0)
+	if err != nil {
+		t.Errorf("man.AddTable: %v", err.Error())
+	}
+
+	err = man.RemoveTable(t2, 0)
+	if err != nil {
+		t.Errorf("man.AddTable: %v", err.Error())
+	}
+
+	if man.Levels[0].Size != 0 || len(man.Levels[0].Tables) != 0 {
+		t.Error("Expected size 0 and table length 0")
+	}
 }
 
-// TODO
-func TestManifestClearLevel(t *testing.T) {
+func TestManifest_ClearLevel(t *testing.T) {
+	man, err := newManifest(t)
+	if err != nil {
+		t.Error(err)
+	}
+	t2 := &sstable.SSTable[int64, string]{
+		First:     10,
+		Last:      19,
+		Name:      filepath.Join(t.TempDir(), "test_segment.segment"),
+		Size:      100,
+		CreatedOn: time.Now(),
+		Entries: []*sstable.Entry[int64, string]{
+			{Operation: sstable.INSERT, Key: 10, Value: "value1"},
+			{Operation: sstable.INSERT, Key: 12, Value: "value2"},
+			{Operation: sstable.DELETE, Key: 19, Value: ""},
+		},
+	}
+
+	err = man.AddTable(t2, 0)
+	if err != nil {
+		t.Errorf("man.AddTable: %v", err.Error())
+	}
+	err = man.ClearLevel(0)
+	if man.Levels[0].Size != 0 || len(man.Levels[0].Tables) != 0 {
+		t.Error("Expected size 0 and table length 0")
+	}
 }
 
 // TODO

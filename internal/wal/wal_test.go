@@ -1,4 +1,4 @@
-package memtable
+package wal
 
 import (
 	"encoding/json"
@@ -8,14 +8,19 @@ import (
 	"testing"
 )
 
+type TestEntry struct{}
+
+func (t *TestEntry) Apply(c interface{}) {
+}
+
 func TestWALWrite(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"), 10)
+	wal, err := New[*TestEntry](filepath.Join(tmpdir, "wal.db"), 10)
 	if err != nil {
 		t.Error(err)
 	}
 	defer wal.Close()
-	err = wal.Write(5, "Helloworld")
+	err = wal.Write(&TestEntry{})
 	if err != nil {
 		t.Error("error on Write:14")
 	}
@@ -23,13 +28,13 @@ func TestWALWrite(t *testing.T) {
 
 func TestWALDecode(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.db"), 10)
+	wal, err := New[*TestEntry](filepath.Join(tmpdir, "wal.db"), 10)
 	if err != nil {
 		t.Error(err)
 	}
 	defer wal.Close()
 	for i := 0; i < 201; i++ {
-		err = wal.Write(i, "Helloworld")
+		err = wal.Write(&TestEntry{})
 		if err != nil {
 			t.Error(err)
 		}
@@ -42,9 +47,9 @@ func TestWALDecode(t *testing.T) {
 	defer file.Close()
 	dec := json.NewDecoder(file)
 
-	var entries []*LogEntry[int, any]
+	var entries []*TestEntry
 	for {
-		var entry []*LogEntry[int, any]
+		var entry []*TestEntry
 		if err = dec.Decode(&entry); err != nil {
 			if err == io.EOF {
 				break
@@ -61,13 +66,13 @@ func TestWALDecode(t *testing.T) {
 
 func TestWALDiscard(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := newWal[int, any](filepath.Join(tmpdir, "wal.dat"), 10)
+	wal, err := New[*TestEntry](filepath.Join(tmpdir, "wal.dat"), 10)
 	if err != nil {
 		t.Error(err)
 	}
 	defer wal.Close()
 	for i := 0; i < 25; i++ {
-		err = wal.Write(i, "Helloworld")
+		err = wal.Write(&TestEntry{})
 		if err != nil {
 			t.Error("error on Write:14")
 		}

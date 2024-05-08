@@ -40,19 +40,45 @@ import (
 //		- Tombstone density
 //		- Tombstone-TTL
 
-// type Controller[K cmp.Ordered, V any] interface {
-// 	Compact(*Manifest[K, V])
-// 	Trigger(*Level[K, V]) bool
-// }
-//
-// type CompactionImpl[K cmp.Ordered, V any] struct {
-// 	// LevelPaths       []string
-// 	BloomPath        string
-// 	SSTable_max_size int
-// }
+func (man *Manifest[K, V]) Compact() {
+	for {
+		select {
+		case <-man.done:
+			return
+		case <-man.compactionTicker.C:
+			allCompacted := true
+			for _, level := range man.Levels {
+				if man.Trigger(level) {
+					slog.Debug("Compaction triggered")
+					allCompacted = false
+					break
+				}
+			}
+
+			if allCompacted {
+				slog.Debug("Skipping compaction")
+				continue
+			}
+
+			for _, level := range man.Levels {
+				if man.Trigger(level) {
+					man.mut.Lock()
+					if level.Number == 0 {
+						man.level_0_compact(level)
+					} else {
+						man.lower_level_compact(level)
+					}
+					man.mut.Unlock()
+				}
+			}
+		}
+	}
+}
 
 // Returns compaction task if level triggers a compaction
-func (c *Manifest[K, V]) Trigger(level *Level[K, V]) bool {
+func (m *Manifest[K, V]) Trigger(level *Level[K, V]) bool {
+	m.mut.Lock()
+	defer m.mut.Unlock()
 	return level.Size >= level.MaxSize
 }
 
@@ -60,6 +86,7 @@ func (c *Manifest[K, V]) Trigger(level *Level[K, V]) bool {
 //
 // All tables from L0 are merged->split->sync->L1
 func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
+	man.waitForCompaction.Add(1)
 	slog.Debug("============ Level 0 Compaction =============")
 	// Merge all tables
 	merged := sstable.Merge(level.Tables...)
@@ -72,34 +99,32 @@ func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
 		},
 	})
 
-	var wg sync.WaitGroup
 	// Write files and add to manifest
 	for _, splitTable := range split {
-		wg.Add(1)
-		go func(tbl *sstable.SSTable[K, V]) {
-			tbl.Name = filepath.Join(man.Levels[1].Path, sstable.GenerateUniqueSegmentName(tbl.CreatedOn))
+		splitTable.Name = filepath.Join(man.Levels[1].Path, sstable.GenerateUniqueSegmentName(splitTable.CreatedOn))
 
-			_, err := tbl.Sync()
-			if err != nil {
-				slog.Error("Failed to sync table", "filename", tbl.Name)
-				panic(err)
-			}
+		_, err := splitTable.Sync()
+		if err != nil {
+			slog.Error("Failed to sync table", "filename", splitTable.Name)
+			panic(err)
+		}
 
-			err = tbl.SaveFilter()
-			if err != nil {
-				slog.Error("Failed to save filter", "filename", tbl.Filter.Name)
-				panic(err)
-			}
+		err = splitTable.SaveFilter()
+		if err != nil {
+			slog.Error("Failed to save filter", "filename", splitTable.Filter.Name)
+			panic(err)
+		}
 
-			err = man.AddTable(tbl, 1)
-			if err != nil {
-				slog.Error("Failed to add table to level 1", "filename", tbl.Name)
-				panic(err)
-			}
-			wg.Done()
-		}(splitTable)
+		man.Levels[1].Add(splitTable)
+		entry := &ManifestEntry[K, V]{Op: ADDTABLE, Table: splitTable, Level: 1}
+		err = man.wal.Write(entry)
+		if err != nil {
+			slog.Error("Failed to add table to level 1", "filename", splitTable.Name)
+			panic(err)
+		}
 	}
 
+	var wg sync.WaitGroup
 	for _, tbl := range level.Tables {
 		wg.Add(1)
 		go func(t *sstable.SSTable[K, V]) {
@@ -116,11 +141,14 @@ func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
 	}
 	wg.Wait()
 
-	err := man.ClearLevel(level.Number)
+	man.Levels[0].Clear()
+	entry := &ManifestEntry[K, V]{Op: CLEARTABLE, Table: nil, Level: 0}
+	err := man.wal.Write(entry)
 	if err != nil {
 		slog.Error("Failed to clear level")
 		panic(err)
 	}
+	man.waitForCompaction.Done()
 }
 
 // Merge oldest table from upper level into overlapping lower level tables
@@ -190,30 +218,5 @@ func (man *Manifest[K, V]) lower_level_compact(level *Level[K, V]) {
 		slog.Error("Failure to remove table", "filename", table.Name)
 		panic(err)
 	}
-}
-
-func (man *Manifest[K, V]) Compact() {
-	man.compmut.Lock()
-	defer man.compmut.Unlock()
-	allCompacted := true
-	for _, level := range man.Levels {
-		if man.Trigger(level) {
-			allCompacted = false
-			break
-		}
-	}
-
-	if allCompacted {
-		return
-	}
-
-	for _, level := range man.Levels {
-		if man.Trigger(level) {
-			if level.Number == 0 {
-				man.level_0_compact(level)
-			} else {
-				man.lower_level_compact(level)
-			}
-		}
-	}
+	man.waitForCompaction.Done()
 }

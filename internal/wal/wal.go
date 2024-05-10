@@ -1,7 +1,6 @@
 package wal
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -145,14 +144,14 @@ func (self *WAL[T]) Close() error {
 
 // LogApplyErr is returned when a log entry failed to be applied to be applied.
 // This could indicate that some data was lost after a crash.
-type LogApplyErr[K cmp.Ordered, V any] struct {
+type LogApplyErr struct {
 	Cause error
 }
 
-func (l *LogApplyErr[K, V]) Error() string {
+func (l *LogApplyErr) Error() string {
 	return fmt.Sprintf("Log apply error: %v", l.Cause)
 }
 
-func (l *LogApplyErr[K, V]) Unwrap() error {
+func (l *LogApplyErr) Unwrap() error {
 	return l.Cause
 }

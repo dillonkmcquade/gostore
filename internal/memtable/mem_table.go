@@ -1,41 +1,42 @@
 package memtable
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/dillonkmcquade/gostore/internal/filter"
 	"github.com/dillonkmcquade/gostore/internal/ordered"
+	"github.com/dillonkmcquade/gostore/internal/pb"
 	"github.com/dillonkmcquade/gostore/internal/sstable"
 	"github.com/dillonkmcquade/gostore/internal/wal"
 )
 
 // In-memory balanced key-value store
-type MemTable[K cmp.Ordered, V any] interface {
+type MemTable interface {
 	io.Closer
-	Put(K, V) error  // Insert Node to memTable
-	Get(K) (V, bool) // Get returns a value associated with the key
-	Delete(K)        // Insert a node marked as delete
-	Size() uint      // Number of entries
-	Clear()          // Wipe the memtable
+	Put([]byte, []byte) error  // Insert Node to memTable
+	Get([]byte) ([]byte, bool) // Get returns a value associated with the key
+	Delete([]byte)             // Insert a node marked as delete
+	Size() uint                // Number of entries
+	Clear()                    // Wipe the memtable
 
-	FlushedTables() <-chan *sstable.SSTable[K, V]
+	FlushedTables() <-chan *sstable.SSTable
 }
 
-type GostoreMemTable[K cmp.Ordered, V any] struct {
-	rbt       ordered.Collection[K, *sstable.Entry[K, V]] // Ordered in-memory data structure
-	wal       *wal.WAL[*sstable.Entry[K, V]]              // Log of all rbt operations
-	max_size  uint                                        // Max number of elements before flushing
-	bloomOpts *filter.Opts                                // Opts for creating a filter when a new table is created
-	level0Dir string                                      // Path to l0 directory
-	flushChan chan *sstable.SSTable[K, V]                 // Flushed sstables that have not been added to L0 yet
-	writeChan chan *sstable.Entry[K, V]                   // Process incoming write/delete requests
+type GostoreMemTable struct {
+	rbt       ordered.Collection[[]byte, *pb.SSTable_Entry] // Ordered in-memory data structure
+	wal       *wal.WAL[*pb.SSTable_Entry]                   // Log of all rbt operations
+	max_size  uint                                          // Max number of elements before flushing
+	bloomOpts *filter.Opts                                  // Opts for creating a filter when a new table is created
+	level0Dir string                                        // Path to l0 directory
+	flushChan chan *sstable.SSTable                         // Flushed sstables that have not been added to L0 yet
+	writeChan chan *pb.SSTable_Entry                        // Process incoming write/delete requests
 	mut       sync.RWMutex
 	wg        sync.WaitGroup
 }
@@ -47,19 +48,19 @@ type Opts struct {
 	LevelZero        string
 }
 
-func New[K cmp.Ordered, V any](opts *Opts) (MemTable[K, V], error) {
-	wal, err := wal.New[*sstable.Entry[K, V]](opts.WalPath, opts.Batch_write_size)
+func New(opts *Opts) (MemTable, error) {
+	wal, err := wal.New[*pb.SSTable_Entry](opts.WalPath, opts.Batch_write_size)
 	if err != nil {
 		return nil, fmt.Errorf("newWal: %w", err)
 	}
-	memtable := &GostoreMemTable[K, V]{
-		rbt:       ordered.Rbt[K, *sstable.Entry[K, V]](),
+	memtable := &GostoreMemTable{
+		rbt:       ordered.Rbt[[]byte, *pb.SSTable_Entry](slices.Compare[[]byte]),
 		max_size:  opts.Max_size,
 		wal:       wal,
 		bloomOpts: opts.FilterOpts,
 		level0Dir: opts.LevelZero,
-		writeChan: make(chan *sstable.Entry[K, V]),
-		flushChan: make(chan *sstable.SSTable[K, V]),
+		writeChan: make(chan *pb.SSTable_Entry),
+		flushChan: make(chan *sstable.SSTable),
 	}
 	err = memtable.replay(opts.WalPath)
 	if err != nil {
@@ -70,7 +71,7 @@ func New[K cmp.Ordered, V any](opts *Opts) (MemTable[K, V], error) {
 }
 
 // Write memTable to disk as SSTable
-func (mem *GostoreMemTable[K, V]) flush() {
+func (mem *GostoreMemTable) flush() {
 	slog.Debug("Flushing")
 	if !mem.shouldFlush() {
 		slog.Warn("Attempt to flush memtable that should not flush")
@@ -99,7 +100,7 @@ func (mem *GostoreMemTable[K, V]) flush() {
 }
 
 // Restores database state from Write-Ahead-Log
-func (mem *GostoreMemTable[K, V]) replay(filename string) error {
+func (mem *GostoreMemTable) replay(filename string) error {
 	path := filepath.Clean(filename)
 	mem.rbt.Clear()
 	file, err := os.Open(path)
@@ -110,12 +111,12 @@ func (mem *GostoreMemTable[K, V]) replay(filename string) error {
 
 	dec := json.NewDecoder(file)
 	for {
-		entry := make([]*sstable.Entry[K, V], mem.wal.Batch_write_size)
+		entry := make([]*pb.SSTable_Entry, mem.wal.Batch_write_size)
 		if decodeErr := dec.Decode(&entry); decodeErr != nil {
 			if decodeErr == io.EOF {
 				break // End of log file
 			} else {
-				return &wal.LogApplyErr[K, V]{Cause: decodeErr}
+				return &wal.LogApplyErr{Cause: decodeErr}
 			}
 		}
 		// Apply the entry to the database
@@ -127,13 +128,13 @@ func (mem *GostoreMemTable[K, V]) replay(filename string) error {
 	return nil
 }
 
-func (mem *GostoreMemTable[K, V]) FlushedTables() <-chan *sstable.SSTable[K, V] {
+func (mem *GostoreMemTable) FlushedTables() <-chan *sstable.SSTable {
 	return mem.flushChan
 }
 
 // Returns an SSTable filled with entries, with no size
-func (mem *GostoreMemTable[K, V]) Snapshot() *sstable.SSTable[K, V] {
-	sstable := sstable.New(&sstable.Opts[K, V]{
+func (mem *GostoreMemTable) Snapshot() *sstable.SSTable {
+	sstable := sstable.New(&sstable.Opts{
 		DestDir:   mem.level0Dir,
 		BloomOpts: mem.bloomOpts,
 	})
@@ -149,7 +150,7 @@ func (mem *GostoreMemTable[K, V]) Snapshot() *sstable.SSTable[K, V] {
 	return sstable
 }
 
-func (mem *GostoreMemTable[K, V]) processWrites() {
+func (mem *GostoreMemTable) processWrites() {
 	for entry := range mem.writeChan {
 		mem.mut.Lock()
 		mem.rbt.Put(entry.Key, entry)
@@ -165,47 +166,47 @@ func (mem *GostoreMemTable[K, V]) processWrites() {
 	}
 }
 
-func (mem *GostoreMemTable[K, V]) shouldFlush() bool {
+func (mem *GostoreMemTable) shouldFlush() bool {
 	return mem.rbt.Size() >= mem.max_size
 }
 
-func (mem *GostoreMemTable[K, V]) Put(key K, val V) error {
-	entry := &sstable.Entry[K, V]{Key: key, Value: val, Operation: sstable.INSERT}
+func (mem *GostoreMemTable) Put(key []byte, val []byte) error {
+	entry := &pb.SSTable_Entry{Key: key, Value: val, Op: pb.Operation_INSERT}
 	mem.wg.Add(1)
 	mem.writeChan <- entry
 	return nil
 }
 
-func (mem *GostoreMemTable[K, V]) Delete(key K) {
-	placeholder := &sstable.Entry[K, V]{Key: key, Operation: sstable.DELETE}
+func (mem *GostoreMemTable) Delete(key []byte) {
+	placeholder := &pb.SSTable_Entry{Key: key, Value: []byte{}, Op: pb.Operation_DELETE}
 	mem.wg.Add(1)
 	mem.writeChan <- placeholder
 }
 
-func (mem *GostoreMemTable[K, V]) Get(key K) (V, bool) {
+func (mem *GostoreMemTable) Get(key []byte) ([]byte, bool) {
 	mem.mut.RLock()
 	defer mem.mut.RUnlock()
 	if entry, found := mem.rbt.Get(key); found {
-		if entry.Operation == sstable.DELETE {
-			return sstable.Entry[K, V]{}.Value, false
+		if entry.Op == pb.Operation_DELETE {
+			return []byte{}, false
 		}
 		return entry.Value, true
 	}
-	return sstable.Entry[K, V]{}.Value, false
+	return []byte{}, false
 }
 
-func (mem *GostoreMemTable[K, V]) Size() uint {
+func (mem *GostoreMemTable) Size() uint {
 	mem.mut.RLock()
 	defer mem.mut.RUnlock()
 	return mem.rbt.Size()
 }
 
-func (mem *GostoreMemTable[K, V]) Clear() {
+func (mem *GostoreMemTable) Clear() {
 	mem.rbt.Clear()
 	mem.wal.Discard()
 }
 
-func (mem *GostoreMemTable[K, V]) Close() error {
+func (mem *GostoreMemTable) Close() error {
 	mem.wg.Wait()
 	close(mem.writeChan)
 	close(mem.flushChan)

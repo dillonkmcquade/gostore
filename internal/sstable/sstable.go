@@ -1,86 +1,68 @@
 package sstable
 
 import (
-	"cmp"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
 	"github.com/dillonkmcquade/gostore/internal/assert"
 	"github.com/dillonkmcquade/gostore/internal/filter"
-	"github.com/dillonkmcquade/gostore/internal/ordered"
+	"github.com/dillonkmcquade/gostore/internal/pb"
+	"google.golang.org/protobuf/proto"
 )
 
-type Operation byte
-
-const (
-	INSERT Operation = iota
-	DELETE
-)
-
-// Entry represents an entry in the SSTable.
-type Entry[K cmp.Ordered, V any] struct {
-	Operation Operation
-	Key       K
-	Value     V
+// SSTable represents a Sorted String Table. Entries are sorted by key.
+type SSTable struct {
+	Entries   []*pb.SSTable_Entry // A list of entries sorted by key
+	Filter    *filter.BloomFilter // Check if key could be in table
+	file      *os.File            // pointer to file descriptor for the table
+	Size      int64               // Size of file in bytes
+	Name      string              // full filename
+	First     []byte              // First key in range
+	Last      []byte              // Last key in range
+	CreatedOn time.Time           // Timestamp
 }
 
-func (t Entry[K, V]) String() string {
-	return fmt.Sprintf("{%v,%v}", t.Key, t.Value)
-}
-
-func (e *Entry[K, V]) Apply(c interface{}) {
-	rbt := c.(*ordered.RedBlackTree[K, *Entry[K, V]])
-	if e.Operation == INSERT {
-		rbt.Put(e.Key, e)
-	}
-}
-
-type Opts[K cmp.Ordered, V any] struct {
+type Opts struct {
 	BloomOpts *filter.Opts
 	DestDir   string
-	Entries   []*Entry[K, V]
+	Entries   []*pb.SSTable_Entry
 }
 
-func New[K cmp.Ordered, V any](opts *Opts[K, V]) *SSTable[K, V] {
+func New(opts *Opts) *SSTable {
 	timestamp := time.Now()
-	return &SSTable[K, V]{
+	return &SSTable{
 		Name:      filepath.Join(opts.DestDir, GenerateUniqueSegmentName(timestamp)),
 		Entries:   opts.Entries,
-		Filter:    filter.New[K](opts.BloomOpts),
+		Filter:    filter.New(opts.BloomOpts),
 		CreatedOn: timestamp,
 	}
 }
 
-// SSTable represents a Sorted String Table. Entries are sorted by key.
-type SSTable[K cmp.Ordered, V any] struct {
-	Entries   []*Entry[K, V]         // A list of entries sorted by key
-	Filter    *filter.BloomFilter[K] // Check if key could be in table
-	file      *os.File               // pointer to file descriptor for the table
-	Size      int64                  // Size of file in bytes
-	Name      string                 // full filename
-	First     K                      // First key in range
-	Last      K                      // Last key in range
-	CreatedOn time.Time              // Timestamp
-}
-
 // Test if table key range overlaps the key range of another
-func (table *SSTable[K, V]) Overlaps(anotherTable *SSTable[K, V]) bool {
-	return (table.First >= anotherTable.First && table.First <= anotherTable.Last) ||
-		(table.Last >= anotherTable.First && table.Last <= anotherTable.Last)
+func (table *SSTable) Overlaps(anotherTable *SSTable) bool {
+	case1 := (slices.Compare(table.First, anotherTable.First) >= 0 && slices.Compare(table.First, anotherTable.Last) <= 0)
+	case2 := (slices.Compare(table.Last, anotherTable.First) >= 0 && slices.Compare(table.Last, anotherTable.Last) <= 0)
+	return case1 || case2
 }
 
-func (table *SSTable[K, V]) writeTo(writer io.Writer) (int64, error) {
-	encoder := gob.NewEncoder(writer)
-	err := encoder.Encode(table.Entries)
-	return 0, err
+func (table *SSTable) WriteTo(writer io.Writer) (int64, error) {
+	b, err := proto.Marshal(&pb.SSTable{Entries: table.Entries})
+	if err != nil {
+		return -1, err
+	}
+	byteLength, err := writer.Write(b)
+	if err != nil {
+		return 0, fmt.Errorf("writer.Write: %w", err)
+	}
+	return int64(byteLength), nil
 }
 
-func (table *SSTable[K, V]) getFile() (*os.File, error) {
+func (table *SSTable) getFile() (*os.File, error) {
 	if table.file != nil {
 		return table.file, nil
 	}
@@ -90,14 +72,14 @@ func (table *SSTable[K, V]) getFile() (*os.File, error) {
 }
 
 // Sync flushes all in-memory entries to stable storage
-func (table *SSTable[K, V]) Sync() (int64, error) {
+func (table *SSTable) Sync() (int64, error) {
 	fd, err := table.getFile()
 	if err != nil {
 		return 0, err
 	}
 	defer fd.Close()
 
-	_, err = table.writeTo(fd)
+	size, err := table.WriteTo(fd)
 	if err != nil {
 		return 0, err
 	}
@@ -106,36 +88,31 @@ func (table *SSTable[K, V]) Sync() (int64, error) {
 		return 0, err
 	}
 	table.clearEntries()
-	err = table.updateSize()
+	err = table.updateSize(size)
 	return table.Size, err
 }
 
-func (table *SSTable[K, V]) updateSize() error {
-	fd, err := table.file.Stat()
-	if err != nil {
-		return err
-	}
-	size := fd.Size()
-	table.Size = size
+func (table *SSTable) updateSize(size int64) error {
+	table.Size += size
 	return nil
 }
 
-func (table *SSTable[K, V]) clearEntries() {
-	table.Entries = []*Entry[K, V]{}
+func (table *SSTable) clearEntries() {
+	table.Entries = []*pb.SSTable_Entry{}
 }
 
-func (table *SSTable[K, V]) SaveFilter() error {
+func (table *SSTable) SaveFilter() error {
 	return table.Filter.Save()
 }
 
-func (table *SSTable[K, V]) LoadFilter() error {
+func (table *SSTable) LoadFilter() error {
 	return table.Filter.Load()
 }
 
 // Read entries into memory & locks table
 //
 // *** You must call Close() after opening table
-func (table *SSTable[K, V]) Open() error {
+func (table *SSTable) Open() error {
 	if len(table.Entries) > 0 {
 		// slog.Warn("Table entries should be empty before calling open")
 		return nil
@@ -145,13 +122,22 @@ func (table *SSTable[K, V]) Open() error {
 	if err != nil {
 		return fmt.Errorf("os.OpenFile: %w", err)
 	}
-	return gob.NewDecoder(table.file).Decode(&table.Entries)
+
+	b, err := io.ReadAll(table.file)
+
+	tbl := &pb.SSTable{}
+	err = proto.Unmarshal(b, tbl)
+	if err != nil {
+		return fmt.Errorf("proto.Unmarshal: %w", err)
+	}
+	table.Entries = tbl.Entries
+	return nil
 }
 
 // Clears entries, unlocks table, and closes file
 //
 // Should only be called after prior call to Open()
-func (table *SSTable[K, V]) Close() error {
+func (table *SSTable) Close() error {
 	table.clearEntries()
 	err := table.file.Close()
 	if err != nil {
@@ -163,12 +149,12 @@ func (table *SSTable[K, V]) Close() error {
 // Search searches for a key in the SSTable.
 //
 // Panics if attempt to search empty entries array
-func (table *SSTable[K, V]) Search(key K) (V, bool) {
+func (table *SSTable) Search(key []byte) ([]byte, bool) {
 	assert.True(len(table.Entries) > 0, "Cannot search 0 entries")
 
-	idx, found := sort.Find(len(table.Entries), func(i int) int { return cmp.Compare(key, table.Entries[i].Key) })
+	idx, found := sort.Find(len(table.Entries), func(i int) int { return slices.Compare(key, table.Entries[i].Key) })
 	if found {
 		return table.Entries[idx].Value, true
 	}
-	return Entry[K, V]{}.Value, false
+	return []byte{}, false
 }

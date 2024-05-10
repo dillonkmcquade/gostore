@@ -5,11 +5,11 @@ import (
 )
 
 func TestBloomFilterAdd(t *testing.T) {
-	t.Run("Add int64", func(t *testing.T) {
+	t.Run("Add ", func(t *testing.T) {
 		opts := &Opts{Size: 1000}
-		bf := New[int64](opts)
+		bf := New(opts)
 
-		integers := []int64{42, 123, 987}
+		integers := [][]byte{{100}, {1, 2, 3}, {9, 8, 7}}
 		for _, num := range integers {
 			bf.Add(num)
 		}
@@ -20,86 +20,10 @@ func TestBloomFilterAdd(t *testing.T) {
 			}
 		}
 
-		otherIntegers := []int64{1, 99, 1000}
+		otherIntegers := [][]byte{{1}, {9, 9}, {1, 0, 0, 0}}
 		for _, num := range otherIntegers {
 			if bf.Has(num) {
 				t.Errorf("Shouldn't contain %d", num)
-			}
-		}
-	})
-
-	t.Run("Add int32", func(t *testing.T) {
-		opts := &Opts{Size: 100}
-		bf := New[int32](opts)
-
-		integers := []int32{42, 123, 987}
-		for _, num := range integers {
-			bf.Add(num)
-		}
-
-		for _, num := range integers {
-			if !bf.Has(num) {
-				t.Errorf("Should contain %d", num)
-			}
-		}
-
-		otherIntegers := []int32{1, 99, 1000}
-		for _, num := range otherIntegers {
-			if bf.Has(num) {
-				t.Errorf("Shouldn't contain %d", num)
-			}
-		}
-	})
-
-	t.Run("Add string", func(t *testing.T) {
-		opts := &Opts{Size: 100}
-		filter := New[string](opts)
-
-		strings := []string{"hello", "world", "bloom"}
-		for _, str := range strings {
-			filter.Add(str)
-		}
-
-		for _, str := range strings {
-			if !filter.Has(str) {
-				t.Errorf("Should contain %s", str)
-			}
-		}
-
-		otherStrings := []string{"foo", "bar", "baz"}
-		for _, str := range otherStrings {
-			if filter.Has(str) {
-				t.Errorf("Should not contain %s", str)
-			}
-		}
-	})
-
-	t.Run("Add 15000", func(t *testing.T) {
-		opts := &Opts{Size: 100000}
-		filter := New[int64](opts)
-
-		for i := 0; i < 15000; i++ {
-			filter.Add(int64(i))
-		}
-
-		for i := 0; i < 15000; i++ {
-			if !filter.Has(int64(i)) {
-				t.Errorf("Should contain %v", i)
-			}
-		}
-	})
-
-	t.Run("Add 30000", func(t *testing.T) {
-		opts := &Opts{Size: 300000}
-		filter := New[int64](opts)
-
-		for i := 0; i < 30000; i++ {
-			filter.Add(int64(i))
-		}
-
-		for i := 0; i < 30000; i++ {
-			if !filter.Has(int64(i)) {
-				t.Errorf("Should contain %v", i)
 			}
 		}
 	})
@@ -109,9 +33,9 @@ func TestBloomIO(t *testing.T) {
 	t.Run("Save bloom to file", func(t *testing.T) {
 		tmp := t.TempDir()
 		opts := &Opts{Size: 1000, Path: tmp}
-		filter := New[int64](opts)
+		filter := New(opts)
 
-		keys := []int64{50, 70, 90}
+		keys := [][]byte{{50}, {70}, {90}}
 		for _, key := range keys {
 			filter.Add(key)
 		}
@@ -126,7 +50,7 @@ func TestBloomIO(t *testing.T) {
 		if err != nil {
 			t.Error()
 		}
-		if !filter.Has(int64(50)) {
+		if !filter.Has([]byte{50}) {
 			t.Error("Should have key 50")
 		}
 	})

@@ -1,7 +1,6 @@
 package lsm
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -16,16 +15,16 @@ import (
 	"github.com/dillonkmcquade/gostore/internal/ordered"
 )
 
-type LSM[K cmp.Ordered, V any] interface {
+type LSM interface {
 	io.Closer
-	Write(K, V) error  // Write the Key-Value pair to the memtable
-	Read(K) (V, error) // Read the value from the given key.
-	Delete(K) error    // Delete the key from the DB
+	Write([]byte, []byte) error  // Write the Key-Value pair to the memtable
+	Read([]byte) ([]byte, error) // Read the value from the given key.
+	Delete([]byte) error         // Delete the key from the DB
 }
 
-type GoStore[K cmp.Ordered, V any] struct {
-	memTable memtable.MemTable[K, V]  // The current memtable
-	manifest *manifest.Manifest[K, V] // In-memory representation of on-disk data layout (levels, tables)
+type GoStore struct {
+	memTable memtable.MemTable  // The current memtable
+	manifest *manifest.Manifest // In-memory representation of on-disk data layout (levels, tables)
 }
 
 type LSMOpts struct {
@@ -161,7 +160,7 @@ func createAppFiles(opts *LSMOpts) error {
 // Creates a new LSMTree. Creates application directory if it does not exist.
 //
 // ***Will exit with non-zero status if error is returned during any of the initialization steps.
-func New[K cmp.Ordered, V any](opts *LSMOpts) (LSM[K, V], error) {
+func New(opts *LSMOpts) (LSM, error) {
 	var errs []error
 
 	// Create application directories
@@ -171,23 +170,23 @@ func New[K cmp.Ordered, V any](opts *LSMOpts) (LSM[K, V], error) {
 	}
 
 	// DATA LAYOUT
-	manifest, err := manifest.New[K, V](opts.ManifestOpts)
+	manifest, err := manifest.New(opts.ManifestOpts)
 	if err != nil {
 		errs = append(errs, err)
 	}
 
 	// MEMTABLE
-	mem, err := memtable.New[K, V](opts.MemTableOpts)
+	mem, err := memtable.New(opts.MemTableOpts)
 	if err != nil {
 		errs = append(errs, err)
 	}
 
-	gostore := &GoStore[K, V]{memTable: mem, manifest: manifest}
+	gostore := &GoStore{memTable: mem, manifest: manifest}
 	go gostore.waitForFlush()
 	return gostore, errors.Join(errs...)
 }
 
-func (store *GoStore[K, V]) waitForFlush() {
+func (store *GoStore) waitForFlush() {
 	for table := range store.memTable.FlushedTables() {
 		slog.Debug("Received flushed table, adding to L0")
 		store.manifest.AddTable(table, 0)
@@ -195,7 +194,7 @@ func (store *GoStore[K, V]) waitForFlush() {
 }
 
 // Write the Key-Value pair to the memtable
-func (store *GoStore[K, V]) Write(key K, val V) error {
+func (store *GoStore) Write(key []byte, val []byte) error {
 	err := store.memTable.Put(key, val)
 	if err != nil {
 		return fmt.Errorf("memTable.Put: %w", err)
@@ -204,7 +203,7 @@ func (store *GoStore[K, V]) Write(key K, val V) error {
 }
 
 // Read the value from the given key. Will return error if value is not found.
-func (store *GoStore[K, V]) Read(key K) (V, error) {
+func (store *GoStore) Read(key []byte) ([]byte, error) {
 	// Read from memtable first
 	if val, ok := store.memTable.Get(key); ok {
 		return val, nil
@@ -213,19 +212,19 @@ func (store *GoStore[K, V]) Read(key K) (V, error) {
 	// Search sstables
 	val, err := store.manifest.Search(key)
 	if err != nil {
-		return ordered.Node[K, V]{}.Value, fmt.Errorf("manifest.Search: %w", err)
+		return ordered.Node[[]byte, []byte]{}.Value, fmt.Errorf("manifest.Search: %w", err)
 	}
 	return val, nil
 }
 
 // Delete a key from the DB
-func (store *GoStore[K, V]) Delete(key K) error {
+func (store *GoStore) Delete(key []byte) error {
 	store.memTable.Delete(key)
 	return nil
 }
 
 // Close closes all associated resources
-func (store *GoStore[K, V]) Close() error {
+func (store *GoStore) Close() error {
 	store.memTable.Close()
 	return store.manifest.Close()
 }

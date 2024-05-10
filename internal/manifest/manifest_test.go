@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dillonkmcquade/gostore/internal/pb"
 	"github.com/dillonkmcquade/gostore/internal/sstable"
 )
 
-func newManifest(t *testing.T) (*Manifest[int64, string], error) {
+func newManifest(t *testing.T) (*Manifest, error) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "manifest.json")
 	opts := &Opts{
@@ -21,7 +22,7 @@ func newManifest(t *testing.T) (*Manifest[int64, string], error) {
 		SSTable_max_size: 1000,
 		BloomPath:        filepath.Join(tmp, "filters"),
 	}
-	return New[int64, string](opts)
+	return New(opts)
 }
 
 func TestNewManifest(t *testing.T) {
@@ -37,7 +38,7 @@ func TestNewManifest(t *testing.T) {
 		SSTable_max_size: 1000,
 		BloomPath:        filepath.Join(tmp, "filters"),
 	}
-	man, err := New[int64, string](opts)
+	man, err := New(opts)
 	if err != nil {
 		t.Error(err)
 	}
@@ -49,16 +50,16 @@ func TestManifestAddTable(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	t2 := &sstable.SSTable[int64, string]{
-		First:     10,
-		Last:      19,
+	t2 := &sstable.SSTable{
+		First:     []byte{10},
+		Last:      []byte{19},
 		Name:      filepath.Join(t.TempDir(), "test_segment.segment"),
 		Size:      100,
 		CreatedOn: time.Now(),
-		Entries: []*sstable.Entry[int64, string]{
-			{Operation: sstable.INSERT, Key: 10, Value: "value1"},
-			{Operation: sstable.INSERT, Key: 12, Value: "value2"},
-			{Operation: sstable.DELETE, Key: 19, Value: ""},
+		Entries: []*pb.SSTable_Entry{
+			{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
+			{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
+			{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
 		},
 	}
 
@@ -80,16 +81,16 @@ func TestManifestRemoveTable(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	t2 := &sstable.SSTable[int64, string]{
-		First:     10,
-		Last:      19,
+	t2 := &sstable.SSTable{
+		First:     []byte{10},
+		Last:      []byte{19},
 		Name:      filepath.Join(t.TempDir(), "test_segment.segment"),
 		Size:      100,
 		CreatedOn: time.Now(),
-		Entries: []*sstable.Entry[int64, string]{
-			{Operation: sstable.INSERT, Key: 10, Value: "value1"},
-			{Operation: sstable.INSERT, Key: 12, Value: "value2"},
-			{Operation: sstable.DELETE, Key: 19, Value: ""},
+		Entries: []*pb.SSTable_Entry{
+			{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
+			{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
+			{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
 		},
 	}
 
@@ -113,16 +114,16 @@ func TestManifest_ClearLevel(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	t2 := &sstable.SSTable[int64, string]{
-		First:     10,
-		Last:      19,
+	t2 := &sstable.SSTable{
+		First:     []byte{10},
+		Last:      []byte{19},
 		Name:      filepath.Join(t.TempDir(), "test_segment.segment"),
 		Size:      100,
 		CreatedOn: time.Now(),
-		Entries: []*sstable.Entry[int64, string]{
-			{Operation: sstable.INSERT, Key: 10, Value: "value1"},
-			{Operation: sstable.INSERT, Key: 12, Value: "value2"},
-			{Operation: sstable.DELETE, Key: 19, Value: ""},
+		Entries: []*pb.SSTable_Entry{
+			{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
+			{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
+			{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
 		},
 	}
 
@@ -140,77 +141,77 @@ func TestManifest_ClearLevel(t *testing.T) {
 func TestManifestReplay(t *testing.T) {
 }
 
-func newTestManifest(path string) *Manifest[int64, string] {
-	return &Manifest[int64, string]{
-		Levels: []*Level[int64, string]{
+func newTestManifest(path string) *Manifest {
+	return &Manifest{
+		Levels: []*Level{
 			{
 				Number: 0,
-				Tables: []*sstable.SSTable[int64, string]{
+				Tables: []*sstable.SSTable{
 					{
-						Entries: []*sstable.Entry[int64, string]{
+						Entries: []*pb.SSTable_Entry{
 							{
-								Operation: sstable.INSERT,
-								Key:       0,
-								Value:     "TEST",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{0},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       1,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{1},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       2,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{2},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       3,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{3},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       4,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{4},
+								Value: []byte("TEST"),
 							},
 						},
 						Name:      filepath.Join(path, sstable.GenerateUniqueSegmentName(time.Now())),
-						First:     0,
-						Last:      4,
+						First:     []byte{0},
+						Last:      []byte{4},
 						Size:      0,
 						CreatedOn: time.Now(),
 					},
 					{
-						Entries: []*sstable.Entry[int64, string]{
+						Entries: []*pb.SSTable_Entry{
 							{
-								Operation: sstable.INSERT,
-								Key:       50,
-								Value:     "TEST",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{50},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       100,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{55},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       200,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{60},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       300,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{70},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       400,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{80},
+								Value: []byte("TEST"),
 							},
 						},
 						Name:      filepath.Join(path, sstable.GenerateUniqueSegmentName(time.Now())),
-						First:     50,
-						Last:      400,
+						First:     []byte{50},
+						Last:      []byte{80},
 						Size:      0,
 						CreatedOn: time.Now(),
 					},
@@ -220,72 +221,72 @@ func newTestManifest(path string) *Manifest[int64, string] {
 			},
 			{
 				Number: 1,
-				Tables: []*sstable.SSTable[int64, string]{
+				Tables: []*sstable.SSTable{
 					{
-						Entries: []*sstable.Entry[int64, string]{
+						Entries: []*pb.SSTable_Entry{
 							{
-								Operation: sstable.INSERT,
-								Key:       7,
-								Value:     "TEST",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{7},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       8,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{8},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       9,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{9},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       10,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{10},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       14,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{14},
+								Value: []byte("TEST"),
 							},
 						},
 						Name:      filepath.Join(path, sstable.GenerateUniqueSegmentName(time.Now())),
-						First:     7,
-						Last:      14,
+						First:     []byte{7},
+						Last:      []byte{14},
 						Size:      0,
 						CreatedOn: time.Now(),
 					},
 					{
-						Entries: []*sstable.Entry[int64, string]{
+						Entries: []*pb.SSTable_Entry{
 							{
-								Operation: sstable.INSERT,
-								Key:       21,
-								Value:     "TEST",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{21},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       28,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{28},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       29,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{29},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       31,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{31},
+								Value: []byte("TEST"),
 							},
 							{
-								Operation: sstable.INSERT,
-								Key:       40,
-								Value:     "",
+								Op:    pb.Operation_INSERT,
+								Key:   []byte{40},
+								Value: []byte("TEST"),
 							},
 						},
 						Name:      filepath.Join(path, sstable.GenerateUniqueSegmentName(time.Now())),
-						First:     7,
-						Last:      14,
+						First:     []byte{21},
+						Last:      []byte{40},
 						Size:      0,
 						CreatedOn: time.Now(),
 					},
@@ -295,37 +296,9 @@ func newTestManifest(path string) *Manifest[int64, string] {
 			},
 			{
 				Number: 2,
-				Tables: []*sstable.SSTable[int64, string]{{
-					Entries: []*sstable.Entry[int64, string]{
-						{
-							Operation: sstable.INSERT,
-							Key:       40,
-							Value:     "TEST",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       1,
-							Value:     "",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       2,
-							Value:     "",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       3,
-							Value:     "",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       4,
-							Value:     "",
-						},
-					},
+				Tables: []*sstable.SSTable{{
+					Entries:   []*pb.SSTable_Entry{},
 					Name:      "",
-					First:     0,
-					Last:      0,
 					Size:      0,
 					CreatedOn: time.Now(),
 				}},
@@ -334,37 +307,9 @@ func newTestManifest(path string) *Manifest[int64, string] {
 			},
 			{
 				Number: 3,
-				Tables: []*sstable.SSTable[int64, string]{{
-					Entries: []*sstable.Entry[int64, string]{
-						{
-							Operation: sstable.INSERT,
-							Key:       0,
-							Value:     "TEST",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       1,
-							Value:     "",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       2,
-							Value:     "",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       3,
-							Value:     "",
-						},
-						{
-							Operation: sstable.INSERT,
-							Key:       4,
-							Value:     "",
-						},
-					},
+				Tables: []*sstable.SSTable{{
+					Entries:   []*pb.SSTable_Entry{},
 					Name:      "",
-					First:     0,
-					Last:      0,
 					Size:      0,
 					CreatedOn: time.Now(),
 				}},

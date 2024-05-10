@@ -10,7 +10,7 @@ service GoStore {
 }
 
 message WriteRequest {
-  uint64 key = 1;
+  bytes key = 1;
   bytes payload = 2;
 }
 
@@ -25,4 +25,4 @@ message ReadReply {
   bytes data = 3;
 }
 
-message ReadRequest { uint64 key = 1; }
+message ReadRequest { bytes key = 1; }

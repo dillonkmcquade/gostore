@@ -11,12 +11,12 @@ import (
 
 type GoStoreRPC struct {
 	pb.UnimplementedGoStoreServer
-	tree lsm.LSM[uint64, []byte]
+	tree lsm.LSM
 }
 
 func New() *GoStoreRPC {
 	opts := lsm.NewDefaultLSMOpts("")
-	tree, err := lsm.New[uint64, []byte](opts)
+	tree, err := lsm.New(opts)
 	if err != nil {
 		panic(err)
 	}

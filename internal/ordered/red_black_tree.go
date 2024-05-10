@@ -1,14 +1,13 @@
 package ordered
 
 import (
-	"cmp"
 	"fmt"
 
 	"github.com/dillonkmcquade/gostore/internal/wal"
 )
 
 // A key-value balanced tree data structure
-type Collection[K cmp.Ordered, V any] interface {
+type Collection[K any, V any] interface {
 	Iterable[K, V]
 	Get(K) (V, bool) // Get value from key
 	Put(K, V)        // Insert node
@@ -17,27 +16,28 @@ type Collection[K cmp.Ordered, V any] interface {
 	Size() uint
 }
 
-type RedBlackTree[K cmp.Ordered, V any] struct {
-	size uint
-	root *Node[K, V]
+type RedBlackTree[K any, V any] struct {
+	size       uint
+	root       *Node[K, V]
+	comparator func(K, K) int
 }
 
-type Node[K cmp.Ordered, V any] struct {
+type Node[K any, V any] struct {
 	left, right, parent *Node[K, V]
 	Key                 K
 	Value               V
 	isBlack             bool
 }
 
-func Rbt[K cmp.Ordered, V any]() Collection[K, V] {
-	return &RedBlackTree[K, V]{}
+func Rbt[K any, V any](comp func(K, K) int) Collection[K, V] {
+	return &RedBlackTree[K, V]{comparator: comp}
 }
 
 func (node *Node[K, V]) String() string {
 	return fmt.Sprintf("Node(black: %v) {%v %v}", node.isBlack, node.Key, node.Value)
 }
 
-func newNode[K cmp.Ordered, V any](key K, val V) *Node[K, V] {
+func newNode[K any, V any](key K, val V) *Node[K, V] {
 	return &Node[K, V]{isBlack: false, Key: key, Value: val, left: nil, right: nil, parent: nil}
 }
 
@@ -48,13 +48,13 @@ type Iterator[V any] interface {
 }
 
 // Iterable specifies a struct that may return an Iterator
-type Iterable[K cmp.Ordered, V any] interface {
+type Iterable[K any, V any] interface {
 	Keys() Iterator[K]
 	Values() Iterator[V]
 }
 
-type RBTIterator[V any | cmp.Ordered] struct {
-	nodes []V
+type RBTIterator[T any] struct {
+	nodes []T
 	index int
 }
 
@@ -68,20 +68,20 @@ func (iter *RBTIterator[V]) Next() V {
 	return node
 }
 
-func newValueIterator[K cmp.Ordered, V any](root *Node[K, V], size uint) *RBTIterator[V] {
+func newValueIterator[K any, V any](root *Node[K, V], size uint) *RBTIterator[V] {
 	list := make([]V, 0, size)
 	sortedNodeList(root, &list)
 	return &RBTIterator[V]{nodes: list}
 }
 
-func newKeyIterator[K cmp.Ordered, V any](root *Node[K, V], size uint) *RBTIterator[K] {
+func newKeyIterator[K any, V any](root *Node[K, V], size uint) *RBTIterator[K] {
 	list := make([]K, 0, size)
 	sortedKeyList(root, &list)
 	return &RBTIterator[K]{nodes: list}
 }
 
 // Traverses the tree inorder and appends each node to the list
-func sortedNodeList[K cmp.Ordered, V any](root *Node[K, V], list *[]V) {
+func sortedNodeList[K any, V any](root *Node[K, V], list *[]V) {
 	if root == nil {
 		return
 	}
@@ -90,7 +90,7 @@ func sortedNodeList[K cmp.Ordered, V any](root *Node[K, V], list *[]V) {
 	sortedNodeList(root.right, list)
 }
 
-func sortedKeyList[K cmp.Ordered, V any](root *Node[K, V], list *[]K) {
+func sortedKeyList[K any, V any](root *Node[K, V], list *[]K) {
 	if root == nil {
 		return
 	}
@@ -131,7 +131,7 @@ func (rbt *RedBlackTree[K, V]) Delete(key K) {
 	rbt.root.isBlack = true
 }
 
-func isRed[K cmp.Ordered, V any](node *Node[K, V]) bool {
+func isRed[K any, V any](node *Node[K, V]) bool {
 	if node == nil {
 		return false
 	}
@@ -143,7 +143,7 @@ func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V) *Node[K, V] {
 		rbt.size++
 		return newNode(key, val)
 	}
-	comp := cmp.Compare(key, node.Key)
+	comp := rbt.comparator(key, node.Key)
 	if comp < 0 {
 		node.left = rbt.put(node.left, key, val)
 	} else if comp > 0 {
@@ -200,9 +200,10 @@ func (rbt *RedBlackTree[K, V]) get(node *Node[K, V], key K) (V, bool) {
 	if node == nil {
 		return Node[K, V]{}.Value, false
 	}
-	if key > node.Key {
+	cmp := rbt.comparator(key, node.Key)
+	if cmp > 0 {
 		return rbt.get(node.right, key)
-	} else if key < node.Key {
+	} else if cmp < 0 {
 		return rbt.get(node.left, key)
 	} else {
 		return node.Value, true

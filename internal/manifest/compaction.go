@@ -40,7 +40,7 @@ import (
 //		- Tombstone density
 //		- Tombstone-TTL
 
-func (man *Manifest[K, V]) Compact() {
+func (man *Manifest) Compact() {
 	for {
 		select {
 		case <-man.done:
@@ -76,7 +76,7 @@ func (man *Manifest[K, V]) Compact() {
 }
 
 // Returns compaction task if level triggers a compaction
-func (m *Manifest[K, V]) Trigger(level *Level[K, V]) bool {
+func (m *Manifest) Trigger(level *Level) bool {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 	return level.Size >= level.MaxSize
@@ -85,14 +85,14 @@ func (m *Manifest[K, V]) Trigger(level *Level[K, V]) bool {
 // The goal of L0 compaction is to insert the unsorted collection of sorted tables into the sorted L1.
 //
 // All tables from L0 are merged->split->sync->L1
-func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
+func (man *Manifest) level_0_compact(level *Level) {
 	man.waitForCompaction.Add(1)
 	slog.Debug("============ Level 0 Compaction =============")
 	// Merge all tables
 	merged := sstable.Merge(level.Tables...)
 
 	// Split
-	split := sstable.Split(merged, man.SSTable_max_size, &sstable.Opts[K, V]{
+	split := sstable.Split(merged, man.SSTable_max_size, &sstable.Opts{
 		BloomOpts: &filter.Opts{
 			Size: uint64(man.SSTable_max_size * 10),
 			Path: man.BloomPath,
@@ -116,7 +116,7 @@ func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
 		}
 
 		man.Levels[1].Add(splitTable)
-		entry := &ManifestEntry[K, V]{Op: ADDTABLE, Table: splitTable, Level: 1}
+		entry := &ManifestEntry{Op: ADDTABLE, Table: splitTable, Level: 1}
 		err = man.wal.Write(entry)
 		if err != nil {
 			slog.Error("Failed to add table to level 1", "filename", splitTable.Name)
@@ -127,7 +127,7 @@ func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
 	var wg sync.WaitGroup
 	for _, tbl := range level.Tables {
 		wg.Add(1)
-		go func(t *sstable.SSTable[K, V]) {
+		go func(t *sstable.SSTable) {
 			err := os.Remove(t.Name)
 			if err != nil {
 				slog.Warn("Failure to remove table", "filename", t.Name)
@@ -142,7 +142,7 @@ func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
 	wg.Wait()
 
 	man.Levels[0].Clear()
-	entry := &ManifestEntry[K, V]{Op: CLEARTABLE, Table: nil, Level: 0}
+	entry := &ManifestEntry{Op: CLEARTABLE, Table: nil, Level: 0}
 	err := man.wal.Write(entry)
 	if err != nil {
 		slog.Error("Failed to clear level")
@@ -152,7 +152,7 @@ func (man *Manifest[K, V]) level_0_compact(level *Level[K, V]) {
 }
 
 // Merge oldest table from upper level into overlapping lower level tables
-func (man *Manifest[K, V]) lower_level_compact(level *Level[K, V]) {
+func (man *Manifest) lower_level_compact(level *Level) {
 	// Choose oldest table
 	table := sstable.Oldest(level.Tables)
 	// find tables in lowerlevel that overlap with table in upper level
@@ -175,7 +175,7 @@ func (man *Manifest[K, V]) lower_level_compact(level *Level[K, V]) {
 	merged := sstable.Merge(append(overlaps, table)...)
 
 	// Split merged table into smaller sizes
-	split := sstable.Split(merged, man.SSTable_max_size, &sstable.Opts[K, V]{
+	split := sstable.Split(merged, man.SSTable_max_size, &sstable.Opts{
 		BloomOpts: &filter.Opts{
 			Size: uint64(man.SSTable_max_size * 10),
 			Path: man.BloomPath,

@@ -8,14 +8,18 @@ build:
 proto-compile:
 	protoc -I=proto --go_out=internal/pb --go_opt=paths=source_relative \
 	--go-grpc_out=internal/pb --go-grpc_opt=paths=source_relative \
+	proto/sstable.proto
+	protoc -I=proto --go_out=internal/pb --go_opt=paths=source_relative \
+	--go-grpc_out=internal/pb --go-grpc_opt=paths=source_relative \
 	proto/gostore.proto
 
 run:
 	$(debug) go run cmd/gostore/main.go -port=5000
 
 clean:
-	rm --force gostore
-	rm *.prof
+	rm -f gostore
+	rm -f *.prof
+	rm -f *.test
 	rm -f ~/.gostore/filters/*
 	rm -f ~/.gostore/*.log
 	rm -f ~/.gostore/l0/*
@@ -23,8 +27,12 @@ clean:
 	rm -f ~/.gostore/l2/*
 	rm -f ~/.gostore/l3/*
 
-test: 
-	go test -v -race -memprofile=mem.prof -cpuprofile=cpu.prof -coverprofile=cover.prof ./internal/lsm_tree/
+
+test:
+	go test -coverprofile=cover.prof ./internal/...
+
+test-profile: 
+	go test -race -memprofile=mem.prof -cpuprofile=cpu.prof -coverprofile=cover.prof ./internal/lsm
 
 cpu-profile:
 	go tool pprof -http=localhost:3001 cpu.prof

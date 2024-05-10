@@ -6,31 +6,32 @@ import (
 	"time"
 
 	"github.com/dillonkmcquade/gostore/internal/filter"
+	"github.com/dillonkmcquade/gostore/internal/pb"
 )
 
-var t1 = &SSTable[int32, string]{
-	First: 1,
-	Last:  3,
-	Entries: []*Entry[int32, string]{
-		{Operation: INSERT, Key: 1, Value: "value1"},
-		{Operation: INSERT, Key: 2, Value: "value2"},
-		{Operation: INSERT, Key: 3, Value: "value3"},
+var t1 = &SSTable{
+	First: []byte{1},
+	Last:  []byte{3},
+	Entries: []*pb.SSTable_Entry{
+		{Op: pb.Operation_INSERT, Key: []byte{1}, Value: []byte("value1")},
+		{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
+		{Op: pb.Operation_INSERT, Key: []byte{3}, Value: []byte("value3")},
 	},
 }
 
-var t2 = &SSTable[int32, string]{
-	First: 4,
-	Last:  9,
-	Entries: []*Entry[int32, string]{
-		{Operation: INSERT, Key: 4, Value: "value4"},
-		{Operation: INSERT, Key: 5, Value: "value5"},
-		{Operation: INSERT, Key: 9, Value: "value9"},
+var t2 = &SSTable{
+	First: []byte{4},
+	Last:  []byte{9},
+	Entries: []*pb.SSTable_Entry{
+		{Op: pb.Operation_INSERT, Key: []byte{4}, Value: []byte("value4")},
+		{Op: pb.Operation_INSERT, Key: []byte{5}, Value: []byte("value5")},
+		{Op: pb.Operation_INSERT, Key: []byte{9}, Value: []byte("value9")},
 	},
 }
 
 func TestFindOverlappingTables(t *testing.T) {
 	t.Run("Overlap one table", func(t *testing.T) {
-		tbls := Overlapping(t1, []*SSTable[int32, string]{t1, t2})
+		tbls := Overlapping(t1, []*SSTable{t1, t2})
 
 		if len(tbls) != 1 {
 			for _, table := range tbls {
@@ -45,26 +46,26 @@ func TestFindOverlappingTables(t *testing.T) {
 	})
 
 	t.Run("Empty lower level", func(t *testing.T) {
-		tbls := Overlapping(t1, []*SSTable[int32, string]{})
+		tbls := Overlapping(t1, []*SSTable{})
 		if len(tbls) != 0 {
 			t.Error("Should return 0 overlapping tables")
 		}
 	})
 
 	t.Run("Overlap more than one table", func(t *testing.T) {
-		wideTable := &SSTable[int32, string]{
-			First: 1,
-			Last:  5,
-			Entries: []*Entry[int32, string]{
-				{Operation: INSERT, Key: 1, Value: "value1"},
-				{Operation: INSERT, Key: 2, Value: "value2"},
-				{Operation: DELETE, Key: 3, Value: ""},
-				{Operation: INSERT, Key: 4, Value: "value3"},
-				{Operation: INSERT, Key: 5, Value: "value4"},
+		wideTable := &SSTable{
+			First: []byte{1},
+			Last:  []byte{5},
+			Entries: []*pb.SSTable_Entry{
+				{Op: pb.Operation_INSERT, Key: []byte{1}, Value: []byte("value1")},
+				{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
+				{Op: pb.Operation_DELETE, Key: []byte{3}, Value: []byte("")},
+				{Op: pb.Operation_INSERT, Key: []byte{4}, Value: []byte("value3")},
+				{Op: pb.Operation_INSERT, Key: []byte{5}, Value: []byte("value4")},
 			},
 		}
 
-		tbls := Overlapping(wideTable, []*SSTable[int32, string]{t1, t2})
+		tbls := Overlapping(wideTable, []*SSTable{t1, t2})
 		if len(tbls) != 2 {
 			t.Error("Should overlap two tables")
 		}
@@ -74,7 +75,7 @@ func TestFindOverlappingTables(t *testing.T) {
 func TestFindOldestTable(t *testing.T) {
 	t.Run("4 element slice", func(t *testing.T) {
 		now := time.Now()
-		tables := []*SSTable[int64, string]{
+		tables := []*SSTable{
 			{CreatedOn: now},
 			{CreatedOn: now.Add(-time.Hour * 24)},     // 1 day ago
 			{CreatedOn: now.Add(-time.Hour * 24 * 2)}, // 2 days ago
@@ -96,12 +97,12 @@ func TestFindOldestTable(t *testing.T) {
 				t.Error("Should panic on empty slice")
 			}
 		}()
-		tables := []*SSTable[int64, string]{}
+		tables := []*SSTable{}
 		_ = Oldest(tables)
 	})
 
 	t.Run("one element slice", func(t *testing.T) {
-		tables := []*SSTable[int64, string]{{CreatedOn: time.Now()}}
+		tables := []*SSTable{{CreatedOn: time.Now()}}
 		oldest := Oldest(tables)
 		expectedOldest := tables[0]
 		if !reflect.DeepEqual(oldest, expectedOldest) {
@@ -110,10 +111,9 @@ func TestFindOldestTable(t *testing.T) {
 	})
 }
 
-// TODO
 func TestMerge(t *testing.T) {
 	total := 0
-	for _, tbl := range []*SSTable[int32, string]{t1, t2} {
+	for _, tbl := range []*SSTable{t1, t2} {
 		total += len(tbl.Entries)
 	}
 
@@ -124,22 +124,21 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-// TODO
 func TestSplit(t *testing.T) {
 	tmp := t.TempDir()
-	tbl := &SSTable[int32, string]{
-		First: 4,
-		Last:  99,
-		Entries: []*Entry[int32, string]{
-			{Operation: INSERT, Key: 4, Value: "value4"},
-			{Operation: INSERT, Key: 5, Value: "value5"},
-			{Operation: INSERT, Key: 19, Value: "value9"},
-			{Operation: INSERT, Key: 29, Value: "value9"},
-			{Operation: INSERT, Key: 39, Value: "value9"},
-			{Operation: INSERT, Key: 49, Value: "value9"},
+	tbl := &SSTable{
+		First: []byte{4},
+		Last:  []byte{99},
+		Entries: []*pb.SSTable_Entry{
+			{Op: pb.Operation_INSERT, Key: []byte{4}, Value: []byte("value4")},
+			{Op: pb.Operation_INSERT, Key: []byte{5}, Value: []byte("value5")},
+			{Op: pb.Operation_INSERT, Key: []byte{19}, Value: []byte("value9")},
+			{Op: pb.Operation_INSERT, Key: []byte{29}, Value: []byte("value9")},
+			{Op: pb.Operation_INSERT, Key: []byte{39}, Value: []byte("value9")},
+			{Op: pb.Operation_INSERT, Key: []byte{49}, Value: []byte("value9")},
 		},
 	}
-	split := Split(tbl, 2, &Opts[int32, string]{
+	split := Split(tbl, 2, &Opts{
 		BloomOpts: &filter.Opts{
 			Size: 100,
 			Path: tmp,

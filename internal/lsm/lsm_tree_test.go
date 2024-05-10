@@ -1,8 +1,10 @@
 package lsm
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -10,7 +12,7 @@ import (
 func TestLSMNew(t *testing.T) {
 	t.Run("Test opts", func(t *testing.T) {
 		tmp := t.TempDir()
-		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New(NewTestLSMOpts(tmp))
 		if err != nil {
 			t.Error(err)
 		}
@@ -19,7 +21,7 @@ func TestLSMNew(t *testing.T) {
 
 	t.Run("Default opts", func(t *testing.T) {
 		tmp := t.TempDir()
-		tree, err := New[int64, any](NewDefaultLSMOpts(tmp))
+		tree, err := New(NewDefaultLSMOpts(tmp))
 		if err != nil {
 			t.Error(err)
 		}
@@ -32,7 +34,7 @@ func TestLSMNew(t *testing.T) {
 				t.Error("should panic")
 			}
 		}()
-		_, err := New[int64, any](NewTestLSMOpts(""))
+		_, err := New(NewTestLSMOpts(""))
 		if err != nil {
 			t.Error(err)
 		}
@@ -41,19 +43,20 @@ func TestLSMNew(t *testing.T) {
 
 func TestLSMWrite(t *testing.T) {
 	t.Parallel()
-	t.Run("1000", func(t *testing.T) {
+	t.Run("255", func(t *testing.T) {
 		t.Parallel()
 		tmp := t.TempDir()
-		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New(NewTestLSMOpts(tmp))
 		if err != nil {
 			t.Error(err)
 		}
 		defer tree.Close()
 		var wg sync.WaitGroup
-		for i := 0; i < 1000; i++ {
+		var i byte
+		for i = 0; i < 255; i++ {
 			wg.Add(1)
-			go func(i int) {
-				err := tree.Write(int64(i), "test")
+			go func(i byte) {
+				err := tree.Write([]byte{i}, []byte("test"))
 				if err != nil {
 					t.Error(err)
 				}
@@ -61,10 +64,10 @@ func TestLSMWrite(t *testing.T) {
 			}(i)
 		}
 		wg.Wait()
-		for i := 0; i < 1000; i++ {
+		for i = 0; i < 255; i++ {
 			wg.Add(1)
-			go func(i int) {
-				_, err := tree.Read(int64(i))
+			go func(i byte) {
+				_, err := tree.Read([]byte{i})
 				if err != nil {
 					t.Errorf("Should be found: %v", i)
 				}
@@ -75,7 +78,7 @@ func TestLSMWrite(t *testing.T) {
 	t.Run("1001", func(t *testing.T) {
 		t.Parallel()
 		tmp := t.TempDir()
-		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New(NewTestLSMOpts(tmp))
 		if err != nil {
 			t.Error(err)
 		}
@@ -84,13 +87,13 @@ func TestLSMWrite(t *testing.T) {
 		for i := 0; i < 1001; i++ {
 			wg.Add(1)
 			go func(i int) {
-				tree.Write(int64(i), "test")
+				tree.Write([]byte(fmt.Sprintf("%v", i)), []byte("test"))
 				wg.Done()
 			}(i)
 		}
 		wg.Wait()
 		for i := 0; i < 1001; i++ {
-			_, err := tree.Read(int64(i))
+			_, err := tree.Read([]byte(fmt.Sprintf("%v", i)))
 			if err != nil {
 				t.Errorf("Should be found: %v", i)
 			}
@@ -99,7 +102,7 @@ func TestLSMWrite(t *testing.T) {
 	t.Run("1999", func(t *testing.T) {
 		t.Parallel()
 		tmp := t.TempDir()
-		tree, err := New[int64, any](NewTestLSMOpts(tmp))
+		tree, err := New(NewTestLSMOpts(tmp))
 		if err != nil {
 			t.Error(err)
 		}
@@ -108,13 +111,13 @@ func TestLSMWrite(t *testing.T) {
 		for i := 0; i < 1999; i++ {
 			wg.Add(1)
 			go func(i int) {
-				tree.Write(int64(i), "test")
+				tree.Write([]byte(fmt.Sprintf("%v", i)), []byte("test"))
 				wg.Done()
 			}(i)
 		}
 		wg.Wait()
 		for i := 0; i < 1999; i++ {
-			_, err := tree.Read(int64(i))
+			_, err := tree.Read([]byte(fmt.Sprintf("%v", i)))
 			if err != nil {
 				t.Errorf("Should be found: %v", i)
 			}
@@ -124,7 +127,7 @@ func TestLSMWrite(t *testing.T) {
 
 func TestLSMRead(t *testing.T) {
 	tmp := t.TempDir()
-	tree, err := New[int64, any](NewTestLSMOpts(tmp))
+	tree, err := New(NewTestLSMOpts(tmp))
 	if err != nil {
 		t.Error(err)
 	}
@@ -133,12 +136,12 @@ func TestLSMRead(t *testing.T) {
 	for i := 0; i < 11001; i++ {
 		wg.Add(1)
 		go func(i int) {
-			tree.Write(int64(i), "test")
+			tree.Write([]byte(fmt.Sprintf("%v", i)), []byte("test"))
 			wg.Done()
 		}(i)
 	}
 	wg.Wait()
-	_, err = tree.Read(11000)
+	_, err = tree.Read([]byte(fmt.Sprintf("%v", 11000)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -149,7 +152,7 @@ func TestLSMFlush(t *testing.T) {
 	tmp := t.TempDir()
 	opts := NewTestLSMOpts(tmp)
 	opts.MemTableOpts.Max_size = 5
-	tree, err := New[int64, any](opts)
+	tree, err := New(opts)
 	if err != nil {
 		t.Error(err)
 	}
@@ -159,7 +162,7 @@ func TestLSMFlush(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func(i int) {
-			tree.Write(int64(i), "test")
+			tree.Write([]byte(fmt.Sprintf("%v", i)), []byte("test"))
 			wg.Done()
 		}(i)
 	}
@@ -177,7 +180,7 @@ func TestCompactedRead(t *testing.T) {
 	tmp := t.TempDir()
 
 	opts := NewTestLSMOpts(tmp)
-	tree, err := New[int64, string](opts)
+	tree, err := New(opts)
 	if err != nil {
 		t.Error(err)
 	}
@@ -185,79 +188,79 @@ func TestCompactedRead(t *testing.T) {
 	defer tree.Close()
 
 	for i := 0; i < 10000; i++ {
-		err := tree.Write(int64(i), "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")
+		err := tree.Write([]byte(fmt.Sprintf("%v", i)), []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE"))
 		if err != nil {
 			t.Error(err)
 		}
 	}
 
 	t.Run("Read from compacted tree - 1999", func(t *testing.T) {
-		val, err := tree.Read(1999)
+		val, err := tree.Read([]byte(fmt.Sprintf("%v", 1999)))
 		if err != nil {
 			t.Errorf("Reading %v: %v", 1999, err)
 			t.FailNow()
 		}
-		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+		if !slices.Equal(val, []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")) {
 			t.Error("Should be TESTVALUE")
 		}
 	})
 	t.Run("Read from compacted tree - 0", func(t *testing.T) {
-		val, err := tree.Read(0)
+		val, err := tree.Read([]byte(fmt.Sprintf("%v", 0)))
 		if err != nil {
 			t.Errorf("Reading %v: %v", 0, err)
 			t.FailNow()
 		}
-		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+		if !slices.Equal(val, []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")) {
 			t.Error("Should be TESTVALUE")
 		}
 	})
 	t.Run("Read from compacted tree - 2000", func(t *testing.T) {
-		val, err := tree.Read(2000)
+		val, err := tree.Read([]byte(fmt.Sprintf("%v", 2000)))
 		if err != nil {
 			t.Errorf("Reading %v: %v", 2000, err)
 			t.FailNow()
 		}
-		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+		if !slices.Equal(val, []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")) {
 			t.Error("Should be TESTVALUE")
 		}
 	})
 	t.Run("Read from compacted tree - 3000", func(t *testing.T) {
-		val, err := tree.Read(3000)
+		val, err := tree.Read([]byte(fmt.Sprintf("%v", 3000)))
 		if err != nil {
 			t.Errorf("Reading %v: %v", 3000, err)
 			t.FailNow()
 		}
-		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+		if !slices.Equal(val, []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")) {
 			t.Error("Should be TESTVALUE")
 		}
 	})
 	t.Run("Read from compacted tree - 8000", func(t *testing.T) {
-		val, err := tree.Read(8000)
+		val, err := tree.Read([]byte(fmt.Sprintf("%v", 8000)))
 		if err != nil {
 			t.Errorf("Reading %v: %v", 8000, err)
 			t.FailNow()
 		}
-		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+		if !slices.Equal(val, []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")) {
 			t.Error("Should be TESTVALUE")
 		}
 	})
 	t.Run("Read from compacted tree - 1111", func(t *testing.T) {
-		val, err := tree.Read(1111)
+		val, err := tree.Read([]byte(fmt.Sprintf("%v", 1111)))
 		if err != nil {
 			t.Errorf("Reading %v: %v", 1111, err)
 			t.FailNow()
 		}
-		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+		if !slices.Equal(val, []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")) {
 			t.Error("Should be TESTVALUE")
 		}
 	})
 	t.Run("Read from compacted tree - 8888", func(t *testing.T) {
-		val, err := tree.Read(8888)
+		val, err := tree.Read([]byte(fmt.Sprintf("%v", 8888)))
 		if err != nil {
 			t.Errorf("Reading %v: %v", 8888, err)
 			t.FailNow()
 		}
-		if val != "TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE" {
+		if !slices.Equal(val, []byte("TESTTESTTESTTESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUETESTVALUE")) {
 			t.Error("Should be TESTVALUE")
 		}
 	})

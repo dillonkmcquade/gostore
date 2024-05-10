@@ -1,7 +1,6 @@
 package manifest
 
 import (
-	"cmp"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -25,14 +24,14 @@ const (
 	CLEARTABLE
 )
 
-type ManifestEntry[K cmp.Ordered, V any] struct {
+type ManifestEntry struct {
 	Op    ManifestOp
 	Level int
-	Table *sstable.SSTable[K, V]
+	Table *sstable.SSTable
 }
 
-func (entry *ManifestEntry[K, V]) Apply(c interface{}) {
-	level := c.(*Level[K, V])
+func (entry *ManifestEntry) Apply(c interface{}) {
+	level := c.(*Level)
 	switch entry.Op {
 	case ADDTABLE:
 		level.Add(entry.Table)
@@ -43,14 +42,14 @@ func (entry *ManifestEntry[K, V]) Apply(c interface{}) {
 	}
 }
 
-type Manifest[K cmp.Ordered, V any] struct {
-	Levels            []*Level[K, V]                 // in-memory representation of levels
-	wal               *wal.WAL[*ManifestEntry[K, V]] // Manifest log
-	Path              string                         // path to manifest
-	SSTable_max_size  int                            // Max size to use when splitting tables
-	BloomPath         string                         // Path to filters directory
-	waitForCompaction sync.WaitGroup                 // finish compaction before exiting
-	compactionTicker  *time.Ticker                   // Check if levels need compaction on an interval
+type Manifest struct {
+	Levels            []*Level                 // in-memory representation of levels
+	wal               *wal.WAL[*ManifestEntry] // Manifest log
+	Path              string                   // path to manifest
+	SSTable_max_size  int                      // Max size to use when splitting tables
+	BloomPath         string                   // Path to filters directory
+	waitForCompaction sync.WaitGroup           // finish compaction before exiting
+	compactionTicker  *time.Ticker             // Check if levels need compaction on an interval
 	mut               sync.RWMutex
 	done              chan bool
 }
@@ -65,16 +64,16 @@ type Opts struct {
 }
 
 // Create new manifest
-func New[K cmp.Ordered, V any](opts *Opts) (*Manifest[K, V], error) {
-	var manifest *Manifest[K, V]
-	wal, err := wal.New[*ManifestEntry[K, V]](opts.Path, 1)
+func New(opts *Opts) (*Manifest, error) {
+	var manifest *Manifest
+	wal, err := wal.New[*ManifestEntry](opts.Path, 1)
 	if err != nil {
 		return nil, err
 	}
-	manifest = &Manifest[K, V]{
+	manifest = &Manifest{
 		Path:             opts.Path,
 		wal:              wal,
-		Levels:           make([]*Level[K, V], opts.Num_levels),
+		Levels:           make([]*Level, opts.Num_levels),
 		SSTable_max_size: opts.SSTable_max_size,
 		BloomPath:        opts.BloomPath,
 		compactionTicker: time.NewTicker(2 * time.Second),
@@ -82,7 +81,7 @@ func New[K cmp.Ordered, V any](opts *Opts) (*Manifest[K, V], error) {
 	}
 	for levelNumber := 0; levelNumber < opts.Num_levels; levelNumber++ {
 		multiplier := math.Pow(10, float64(levelNumber))
-		manifest.Levels[levelNumber] = &Level[K, V]{
+		manifest.Levels[levelNumber] = &Level{
 			Number:  levelNumber,
 			Size:    0,
 			MaxSize: opts.Level0_max_size * int64(multiplier),
@@ -99,7 +98,7 @@ func New[K cmp.Ordered, V any](opts *Opts) (*Manifest[K, V], error) {
 
 var ErrNotFound = errors.New("Not found")
 
-func (m *Manifest[K, V]) Search(key K) (V, error) {
+func (m *Manifest) Search(key []byte) ([]byte, error) {
 	var errs []error
 
 	if v, err := m.searchL0(key); err != nil {
@@ -113,10 +112,10 @@ func (m *Manifest[K, V]) Search(key K) (V, error) {
 	} else {
 		return v, nil
 	}
-	return ordered.Node[K, V]{}.Value, errors.Join(errs...)
+	return []byte{}, errors.Join(errs...)
 }
 
-func (m *Manifest[K, V]) searchL0(key K) (V, error) {
+func (m *Manifest) searchL0(key []byte) ([]byte, error) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 
@@ -129,7 +128,7 @@ func (m *Manifest[K, V]) searchL0(key K) (V, error) {
 			if err != nil {
 				slog.Error("Read: error opening table", "filename", tbl.Name)
 				slog.Error(err.Error())
-				return ordered.Node[K, V]{}.Value, err
+				return ordered.Node[[]byte, []byte]{}.Value, err
 			}
 
 			if val, found := tbl.Search(key); found {
@@ -138,14 +137,14 @@ func (m *Manifest[K, V]) searchL0(key K) (V, error) {
 			err = tbl.Close()
 			if err != nil {
 				slog.Error(err.Error())
-				return ordered.Node[K, V]{}.Value, fmt.Errorf("tbl.Close: %w", err)
+				return []byte{}, fmt.Errorf("tbl.Close: %w", err)
 			}
 		}
 	}
-	return ordered.Node[K, V]{}.Value, ErrNotFound
+	return []byte{}, ErrNotFound
 }
 
-func (m *Manifest[K, V]) searchLowerLevels(key K) (V, error) {
+func (m *Manifest) searchLowerLevels(key []byte) ([]byte, error) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 
@@ -157,7 +156,7 @@ func (m *Manifest[K, V]) searchLowerLevels(key K) (V, error) {
 				if err != nil {
 					slog.Error("Read: error opening table", "filename", level.Tables[i].Name)
 					slog.Error(err.Error())
-					return ordered.Node[K, V]{}.Value, fmt.Errorf("tbl.Open: %w", err)
+					return ordered.Node[[]byte, []byte]{}.Value, fmt.Errorf("tbl.Open: %w", err)
 				}
 				defer level.Tables[i].Close()
 				if val, found := level.Tables[i].Search(key); found {
@@ -166,15 +165,15 @@ func (m *Manifest[K, V]) searchLowerLevels(key K) (V, error) {
 			}
 		}
 	}
-	return ordered.Node[K, V]{}.Value, ErrNotFound
+	return []byte{}, ErrNotFound
 }
 
-func (m *Manifest[K, V]) AddTable(table *sstable.SSTable[K, V], level int) error {
+func (m *Manifest) AddTable(table *sstable.SSTable, level int) error {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 	m.Levels[level].Add(table)
 	slog.Debug("Adding table to level", "level", level, "size", m.Levels[level].Size, "maxSize", m.Levels[level].MaxSize, "Should flush", m.Levels[level].Size > m.Levels[level].MaxSize)
-	entry := &ManifestEntry[K, V]{Op: ADDTABLE, Table: table, Level: level}
+	entry := &ManifestEntry{Op: ADDTABLE, Table: table, Level: level}
 	err := m.wal.Write(entry)
 	if err != nil {
 		return fmt.Errorf("wal.Write: %w", err)
@@ -182,11 +181,11 @@ func (m *Manifest[K, V]) AddTable(table *sstable.SSTable[K, V], level int) error
 	return nil
 }
 
-func (m *Manifest[K, V]) RemoveTable(table *sstable.SSTable[K, V], level int) error {
+func (m *Manifest) RemoveTable(table *sstable.SSTable, level int) error {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 	m.Levels[level].Remove(table)
-	entry := &ManifestEntry[K, V]{Op: REMOVETABLE, Table: table, Level: level}
+	entry := &ManifestEntry{Op: REMOVETABLE, Table: table, Level: level}
 	err := m.wal.Write(entry)
 	if err != nil {
 		return fmt.Errorf("encoder.Encode: %w", err)
@@ -194,11 +193,11 @@ func (m *Manifest[K, V]) RemoveTable(table *sstable.SSTable[K, V], level int) er
 	return nil
 }
 
-func (m *Manifest[K, V]) ClearLevel(level int) error {
+func (m *Manifest) ClearLevel(level int) error {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 	m.Levels[level].Clear()
-	entry := &ManifestEntry[K, V]{Op: CLEARTABLE, Table: nil, Level: level}
+	entry := &ManifestEntry{Op: CLEARTABLE, Table: nil, Level: level}
 	err := m.wal.Write(entry)
 	if err != nil {
 		return fmt.Errorf("encoder.Encode: %w", err)
@@ -206,13 +205,13 @@ func (m *Manifest[K, V]) ClearLevel(level int) error {
 	return nil
 }
 
-func (m *Manifest[K, V]) Close() error {
+func (m *Manifest) Close() error {
 	m.waitForCompaction.Wait()
 	close(m.done)
 	return nil
 }
 
-func (m *Manifest[K, V]) Replay() error {
+func (m *Manifest) Replay() error {
 	file, err := os.Open(m.Path)
 	defer file.Close()
 	if err != nil {
@@ -221,7 +220,7 @@ func (m *Manifest[K, V]) Replay() error {
 	decoder := gob.NewDecoder(file)
 
 	for {
-		var entry ManifestEntry[K, V]
+		var entry ManifestEntry
 		if err := decoder.Decode(&entry); err != nil {
 			if err == io.EOF {
 				break

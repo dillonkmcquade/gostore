@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+option go_package = "github.com/dillonkmcquade/internal/pb";
+
+message SSTable {
+  message Entry {
+    bytes key = 1;
+    bytes value = 2;
+    Operation op = 3;
+  }
+  repeated Entry entries = 1;
+}
+enum Operation {
+  INSERT = 0;
+  DELETE = 1;
+}

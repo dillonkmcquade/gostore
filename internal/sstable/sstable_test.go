@@ -2,30 +2,32 @@ package sstable
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/dillonkmcquade/gostore/internal/filter"
+	"github.com/dillonkmcquade/gostore/internal/pb"
 )
 
 func TestSSTableOverlaps(t *testing.T) {
 	t.Run("Should not overlap", func(t *testing.T) {
-		t1 := &SSTable[int64, string]{
-			First: 0,
-			Last:  9,
-			Entries: []*Entry[int64, string]{
-				{Operation: INSERT, Key: 0, Value: "value1"},
-				{Operation: INSERT, Key: 2, Value: "value2"},
-				{Operation: DELETE, Key: 9, Value: ""},
+		t1 := &SSTable{
+			First: []byte{0},
+			Last:  []byte{9},
+			Entries: []*pb.SSTable_Entry{
+				{Op: pb.Operation_INSERT, Key: []byte{0}, Value: []byte("value1")},
+				{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
+				{Op: pb.Operation_DELETE, Key: []byte{9}, Value: []byte("")},
 			},
 		}
-		t2 := &SSTable[int64, string]{
-			First: 10,
-			Last:  19,
-			Entries: []*Entry[int64, string]{
-				{Operation: INSERT, Key: 10, Value: "value1"},
-				{Operation: INSERT, Key: 12, Value: "value2"},
-				{Operation: DELETE, Key: 19, Value: ""},
+		t2 := &SSTable{
+			First: []byte{10},
+			Last:  []byte{19},
+			Entries: []*pb.SSTable_Entry{
+				{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
+				{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
+				{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
 			},
 		}
 		if t1.Overlaps(t2) || t2.Overlaps(t1) {
@@ -34,22 +36,22 @@ func TestSSTableOverlaps(t *testing.T) {
 	})
 
 	t.Run("T1 should overlap T2", func(t *testing.T) {
-		t1 := &SSTable[int64, string]{
-			First: 0,
-			Last:  9,
-			Entries: []*Entry[int64, string]{
-				{Operation: INSERT, Key: 0, Value: "value1"},
-				{Operation: INSERT, Key: 2, Value: "value2"},
-				{Operation: DELETE, Key: 9, Value: ""},
+		t1 := &SSTable{
+			First: []byte{0},
+			Last:  []byte{9},
+			Entries: []*pb.SSTable_Entry{
+				{Op: pb.Operation_INSERT, Key: []byte{0}, Value: []byte("value1")},
+				{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
+				{Op: pb.Operation_DELETE, Key: []byte{9}, Value: []byte("")},
 			},
 		}
-		t2 := &SSTable[int64, string]{
-			First: 8,
-			Last:  19,
-			Entries: []*Entry[int64, string]{
-				{Operation: INSERT, Key: 8, Value: "value1"},
-				{Operation: INSERT, Key: 12, Value: "value2"},
-				{Operation: DELETE, Key: 19, Value: ""},
+		t2 := &SSTable{
+			First: []byte{8},
+			Last:  []byte{19},
+			Entries: []*pb.SSTable_Entry{
+				{Op: pb.Operation_INSERT, Key: []byte{8}, Value: []byte("value1")},
+				{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
+				{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
 			},
 		}
 		if !t1.Overlaps(t2) {
@@ -61,13 +63,13 @@ func TestSSTableOverlaps(t *testing.T) {
 	})
 
 	t.Run("T1 should overlap T2- no entries", func(t *testing.T) {
-		t1 := &SSTable[int64, string]{
-			First: 0,
-			Last:  9,
+		t1 := &SSTable{
+			First: []byte{0},
+			Last:  []byte{9},
 		}
-		t2 := &SSTable[int64, string]{
-			First: 8,
-			Last:  19,
+		t2 := &SSTable{
+			First: []byte{8},
+			Last:  []byte{19},
 		}
 		if !t1.Overlaps(t2) {
 			t.Errorf("T1 should overlap T2")
@@ -83,11 +85,11 @@ func TestSSTableIO(t *testing.T) {
 		tmp := t.TempDir()
 		filename := filepath.Join(tmp, "synctest")
 		entries := testEntries()
-		t1 := &SSTable[int64, string]{
+		t1 := &SSTable{
 			Entries:   entries,
 			Name:      filename,
-			First:     0,
-			Last:      100,
+			First:     []byte{0},
+			Last:      []byte{100},
 			CreatedOn: time.Now(),
 		}
 		size, err := t1.Sync()
@@ -108,15 +110,15 @@ func TestSSTableIO(t *testing.T) {
 		tmp := t.TempDir()
 		filename := filepath.Join(tmp, "loadtest")
 		entries := testEntries()
-		t1 := &SSTable[int64, string]{
+		t1 := &SSTable{
 			Entries: entries,
 			Name:    filename,
-			Filter: filter.New[int64](&filter.Opts{
+			Filter: filter.New(&filter.Opts{
 				Size: 1000,
 				Path: tmp,
 			}),
-			First:     0,
-			Last:      100,
+			First:     []byte{0},
+			Last:      []byte{100},
 			CreatedOn: time.Now(),
 		}
 		for _, entry := range entries {
@@ -141,20 +143,20 @@ func TestSSTableIO(t *testing.T) {
 		}
 		defer t1.Close()
 
-		val, found := t1.Search(0)
+		val, found := t1.Search(([]byte{0}))
 		if !found {
 			t.Error("Failed to search after opening table")
 		}
-		if val != "TESTVALUE0" {
+		if !slices.Equal(val, []byte("TESTVALUE0")) {
 			t.Error("value should be TESTVALUE0")
 		}
 
-		val, found = t1.Search(5)
+		val, found = t1.Search(([]byte{5}))
 		if !found {
 			t.Error("Failed to search after opening table")
 		}
-		if val != "TESTVALUE5" {
-			t.Error("value should be TESTVALUE0")
+		if slices.Compare(val, []byte("TESTVALUE5")) != 0 {
+			t.Error("value should be TESTVALUE5")
 		}
 
 		if len(t1.Entries) != len(entries) {
@@ -167,28 +169,28 @@ func TestSSTableSearch(t *testing.T) {
 	tmp := t.TempDir()
 	filename := filepath.Join(tmp, "loadtest")
 	entries := testEntries()
-	t1 := &SSTable[int64, string]{
+	t1 := &SSTable{
 		Entries:   entries,
 		Name:      filename,
-		First:     0,
-		Last:      100,
+		First:     []byte{0},
+		Last:      []byte{100},
 		CreatedOn: time.Now(),
 	}
 
 	t.Run("Search keys in table", func(t *testing.T) {
-		if v, found := t1.Search(3); !found || v != "TESTVALUE3" {
+		if _, found := t1.Search([]byte{3}); !found {
 			t.Errorf("Should be in table %v", 3)
 		}
-		if v, found := t1.Search(0); !found || v != "TESTVALUE0" {
+		if _, found := t1.Search(([]byte{0})); !found {
 			t.Errorf("Should be in table %v", 0)
 		}
 	})
 
 	t.Run("Search keys not in table", func(t *testing.T) {
-		if _, found := t1.Search(2); found {
+		if _, found := t1.Search([]byte{33}); found {
 			t.Errorf("%v should not be in table", 3)
 		}
-		if _, found := t1.Search(6); found {
+		if _, found := t1.Search([]byte{6}); found {
 			t.Errorf("%v should not be in table", 6)
 		}
 	})
@@ -198,46 +200,46 @@ func BenchmarkSSTableSearch(b *testing.B) {
 	tmp := b.TempDir()
 	filename := filepath.Join(tmp, "loadtest")
 	entries := testEntries()
-	t1 := &SSTable[int64, string]{
+	t1 := &SSTable{
 		Entries:   entries,
 		Name:      filename,
-		First:     0,
-		Last:      100,
+		First:     []byte{0},
+		Last:      []byte{100},
 		CreatedOn: time.Now(),
 	}
 	b.Run("Search keys in table", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			t1.Search(2)
+			t1.Search([]byte{2})
 		}
 	})
 }
 
-func testEntries() []*Entry[int64, string] {
-	return []*Entry[int64, string]{
+func testEntries() []*pb.SSTable_Entry {
+	return []*pb.SSTable_Entry{
 		{
-			Operation: INSERT,
-			Key:       0,
-			Value:     "TESTVALUE0",
+			Op:    pb.Operation_INSERT,
+			Key:   []byte{0},
+			Value: []byte("TESTVALUE0"),
 		},
 		{
-			Operation: INSERT,
-			Key:       1,
-			Value:     "TESTVALUE1",
+			Op:    pb.Operation_INSERT,
+			Key:   []byte{1},
+			Value: []byte("TESTVALUE1"),
 		},
 		{
-			Operation: INSERT,
-			Key:       3,
-			Value:     "TESTVALUE3",
+			Op:    pb.Operation_INSERT,
+			Key:   []byte{3},
+			Value: []byte("TESTVALUE3"),
 		},
 		{
-			Operation: INSERT,
-			Key:       5,
-			Value:     "TESTVALUE5",
+			Op:    pb.Operation_INSERT,
+			Key:   []byte{5},
+			Value: []byte("TESTVALUE5"),
 		},
 		{
-			Operation: INSERT,
-			Key:       100,
-			Value:     "TESTVALUE100",
+			Op:    pb.Operation_INSERT,
+			Key:   []byte{100},
+			Value: []byte("TESTVALUE100"),
 		},
 	}
 }

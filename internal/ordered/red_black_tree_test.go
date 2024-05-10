@@ -1,13 +1,14 @@
 package ordered
 
 import (
+	"cmp"
 	"math/rand"
 	"testing"
 )
 
 func TestRBT(t *testing.T) {
 	t.Run("Test insert", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
+		tree := &RedBlackTree[int, any]{comparator: cmp.Compare[int]}
 		tree.Put(5, "value")
 		tree.Put(6, "value")
 		if tree.Size() != 2 {
@@ -16,7 +17,7 @@ func TestRBT(t *testing.T) {
 	})
 
 	t.Run("Test multiple inserts", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
+		tree := &RedBlackTree[int, any]{comparator: cmp.Compare[int]}
 		elements := []struct {
 			key   int
 			value string
@@ -37,7 +38,7 @@ func TestRBT(t *testing.T) {
 	})
 
 	t.Run("Test insert duplicates", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
+		tree := &RedBlackTree[int, any]{comparator: cmp.Compare[int]}
 		tree.Put(5, "value")
 		tree.Put(5, "value") // Inserting duplicate
 		if tree.Size() != 1 {
@@ -46,7 +47,7 @@ func TestRBT(t *testing.T) {
 	})
 
 	t.Run("Test insert keys in ascending order", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
+		tree := &RedBlackTree[int, any]{comparator: cmp.Compare[int]}
 		elements := []struct {
 			key   int
 			value string
@@ -68,7 +69,7 @@ func TestRBT(t *testing.T) {
 	})
 
 	t.Run("Test insert keys in descending ordrer", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
+		tree := &RedBlackTree[int, any]{comparator: cmp.Compare[int]}
 		elements := []struct {
 			key   int
 			value string
@@ -90,7 +91,7 @@ func TestRBT(t *testing.T) {
 	})
 
 	t.Run("Test insert random numbers", func(t *testing.T) {
-		tree := &RedBlackTree[int, any]{}
+		tree := &RedBlackTree[int, any]{comparator: cmp.Compare[int]}
 		for i := 0; i < 1000; i++ {
 			key := rand.Intn(10000)
 			tree.Put(key, "TEST")
@@ -100,7 +101,7 @@ func TestRBT(t *testing.T) {
 
 func TestRBTIterator(t *testing.T) {
 	t.Run("Descending order insert", func(t *testing.T) {
-		tree := &RedBlackTree[int, string]{}
+		tree := &RedBlackTree[int, any]{comparator: cmp.Compare[int]}
 		elements := []string{
 			"value5",
 			"value4",
@@ -127,7 +128,7 @@ func TestRBTIterator(t *testing.T) {
 	})
 
 	t.Run("Ascending order insert", func(t *testing.T) {
-		tree := &RedBlackTree[int, string]{}
+		tree := &RedBlackTree[int, string]{comparator: cmp.Compare[int]}
 		elements := []string{
 			"value1",
 			"value2",

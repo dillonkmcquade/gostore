@@ -2,7 +2,6 @@ package filter
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
@@ -15,7 +14,7 @@ import (
 	"github.com/dillonkmcquade/gostore/internal/assert"
 )
 
-type BloomFilter[K cmp.Ordered] struct {
+type BloomFilter struct {
 	bitset []uint64
 	Name   string
 	Size   uint64
@@ -36,10 +35,10 @@ func GenerateUniqueBloomName() string {
 }
 
 // New creates a new Bloom filter with the specified size and number of hash functions.
-func New[K cmp.Ordered](opts *Opts) *BloomFilter[K] {
+func New(opts *Opts) *BloomFilter {
 	gob.Register(fnv.New64a())
 	assert.True(opts.Size > 0, "Bloom filter size cannot be 0")
-	filter := &BloomFilter[K]{
+	filter := &BloomFilter{
 		bitset: make([]uint64, (opts.Size+63)/64),
 		Name:   filepath.Join(opts.Path, GenerateUniqueBloomName()),
 		Size:   opts.Size,
@@ -47,7 +46,7 @@ func New[K cmp.Ordered](opts *Opts) *BloomFilter[K] {
 	return filter
 }
 
-func (bf *BloomFilter[K]) hashFunc(data []byte) uint64 {
+func (bf *BloomFilter) hashFunc(data []byte) uint64 {
 	h := fnv.New64()
 	n, err := h.Write(data)
 	if err != nil || n != len(data) {
@@ -67,33 +66,23 @@ func ConvertToBytes(value interface{}) ([]byte, error) {
 }
 
 // Add adds a key to the Bloom filter.
-func (bf *BloomFilter[K]) Add(key K) {
-	b, err := ConvertToBytes(key)
-	if err != nil {
-		slog.Error("Add: error converting key to byte array", "key", key)
-		panic(err)
-	}
-	for _, hash := range bf.getHashes(b) {
+func (bf *BloomFilter) Add(key []byte) {
+	for _, hash := range bf.getHashes(key) {
 		bf.bitset[hash/64] |= 1 << (hash % 64)
 	}
 }
 
-func (bf *BloomFilter[K]) getHashes(data []byte) [2]uint64 {
+func (bf *BloomFilter) getHashes(data []byte) [2]uint64 {
 	hash1 := bf.hashFunc(data)
 	hash2 := hash1 >> 32 // Use the upper 32 bits of hash1
 	return [2]uint64{hash1 % bf.Size, hash2 % bf.Size}
 }
 
 // Has tests whether a key is in the Bloom filter.
-func (bf *BloomFilter[K]) Has(key K) bool {
+func (bf *BloomFilter) Has(key []byte) bool {
 	assert.True(bf.bitset != nil, "Bitset cannot be nil")
 
-	b, err := ConvertToBytes(key)
-	if err != nil {
-		slog.Error("Has: error converting key to byte array", "key", key)
-		panic(err)
-	}
-	for _, hash := range bf.getHashes(b) {
+	for _, hash := range bf.getHashes(key) {
 		if (bf.bitset[hash/64] & (1 << (hash % 64))) == 0 {
 			return false
 		}
@@ -101,7 +90,7 @@ func (bf *BloomFilter[K]) Has(key K) bool {
 	return true
 }
 
-func (bf *BloomFilter[K]) Load() error {
+func (bf *BloomFilter) Load() error {
 	path := filepath.Clean(bf.Name)
 	file, err := os.Open(path)
 	if err != nil {
@@ -119,7 +108,7 @@ func (bf *BloomFilter[K]) Load() error {
 }
 
 // Save saves the Bloom filter to a file.
-func (bf *BloomFilter[K]) Save() error {
+func (bf *BloomFilter) Save() error {
 	path := filepath.Clean(bf.Name)
 	file, err := os.Create(path)
 	if err != nil {
@@ -138,6 +127,6 @@ func (bf *BloomFilter[K]) Save() error {
 	return nil
 }
 
-func (bf *BloomFilter[K]) Clear() {
+func (bf *BloomFilter) Clear() {
 	bf.bitset = []uint64{}
 }

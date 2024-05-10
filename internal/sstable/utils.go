@@ -1,20 +1,20 @@
 package sstable
 
 import (
-	"cmp"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/dillonkmcquade/gostore/internal"
 	"github.com/dillonkmcquade/gostore/internal/assert"
 	"github.com/dillonkmcquade/gostore/internal/ordered"
+	"github.com/dillonkmcquade/gostore/internal/pb"
 )
 
 // Merge creates a new SSTable from multiple sorted SSTables
-func Merge[K cmp.Ordered, V any](tables ...*SSTable[K, V]) *SSTable[K, V] {
-	tree := &ordered.RedBlackTree[K, *Entry[K, V]]{}
-
+func Merge(tables ...*SSTable) *SSTable {
+	tree := ordered.Rbt[[]byte, *pb.SSTable_Entry](slices.Compare[[]byte])
 	for _, table := range tables {
 		if len(table.Entries) == 0 {
 			err := table.Open()
@@ -27,16 +27,12 @@ func Merge[K cmp.Ordered, V any](tables ...*SSTable[K, V]) *SSTable[K, V] {
 		assert.True(len(table.Entries) > 0, "Expected table with entries, found %v entries", len(table.Entries))
 
 		for _, entry := range table.Entries {
-			if entry.Operation == DELETE {
-				tree.Delete(entry.Key)
-			} else {
-				tree.Put(entry.Key, entry)
-			}
+			tree.Put(entry.Key, entry)
 		}
 	}
 
-	sstable := &SSTable[K, V]{
-		Entries: make([]*Entry[K, V], 0, tree.Size()),
+	sstable := &SSTable{
+		Entries: make([]*pb.SSTable_Entry, 0, tree.Size()),
 	}
 
 	iter := tree.Values()
@@ -50,7 +46,7 @@ func Merge[K cmp.Ordered, V any](tables ...*SSTable[K, V]) *SSTable[K, V] {
 }
 
 // Find and return the oldest table
-func Oldest[K cmp.Ordered, V any](tables []*SSTable[K, V]) *SSTable[K, V] {
+func Oldest(tables []*SSTable) *SSTable {
 	// Tables should never be empty if it triggered compaction
 	assert.True(len(tables) > 0, "Cannot find oldest table from slice of length 0")
 
@@ -65,10 +61,10 @@ func Oldest[K cmp.Ordered, V any](tables []*SSTable[K, V]) *SSTable[K, V] {
 }
 
 // Split a table into multiple tables by size
-func Split[K cmp.Ordered, V any](table *SSTable[K, V], maxSize int, tableOpts *Opts[K, V]) []*SSTable[K, V] {
+func Split(table *SSTable, maxSize int, tableOpts *Opts) []*SSTable {
 	assert.True(len(table.Entries) > maxSize, "Table too small to split")
 
-	var tables []*SSTable[K, V]
+	var tables []*SSTable
 	offset := maxSize
 
 	var i int
@@ -106,11 +102,11 @@ func GenerateUniqueSegmentName(time time.Time) string {
 }
 
 // Return tables from lower_level that overlap upper_table
-func Overlapping[K cmp.Ordered, V any](upper_table *SSTable[K, V], lower_level []*SSTable[K, V]) []*SSTable[K, V] {
+func Overlapping(upper_table *SSTable, lower_level []*SSTable) []*SSTable {
 	if len(lower_level) == 0 {
-		return []*SSTable[K, V]{}
+		return []*SSTable{}
 	}
-	overlaps := []*SSTable[K, V]{}
+	overlaps := []*SSTable{}
 	for _, lower_table := range lower_level {
 		if upper_table.Overlaps(lower_table) {
 			overlaps = append(overlaps, lower_table)

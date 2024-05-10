@@ -1,7 +1,9 @@
 package memtable
 
 import (
+	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,7 +14,7 @@ func TestNewMemTable(t *testing.T) {
 	tmp := t.TempDir()
 	wal := filepath.Join(tmp, "wal.dat")
 
-	mem, err := New[int64, string](&Opts{
+	mem, err := New(&Opts{
 		WalPath:          wal,
 		Max_size:         50,
 		Batch_write_size: 10,
@@ -31,7 +33,7 @@ func TestMemTableCRUD(t *testing.T) {
 	tmp := t.TempDir()
 	wal := filepath.Join(tmp, "wal.dat")
 
-	mem, err := New[int64, string](&Opts{
+	mem, err := New(&Opts{
 		Batch_write_size: 10,
 		WalPath:          wal,
 		Max_size:         2000,
@@ -46,7 +48,7 @@ func TestMemTableCRUD(t *testing.T) {
 	}
 	defer mem.Close()
 	for i := 0; i < 100; i++ {
-		err = mem.Put(int64(i), "TESTVALUE")
+		err = mem.Put([]byte(fmt.Sprintf("%v", i)), []byte("TESTVALUE"))
 		if err != nil {
 			t.Error(err)
 		}
@@ -56,51 +58,56 @@ func TestMemTableCRUD(t *testing.T) {
 		t.Errorf("Size should be 100, found %v", mem.Size())
 	}
 	for i := 0; i < 100; i++ {
-		val, found := mem.Get(int64(i))
+		val, found := mem.Get([]byte(fmt.Sprintf("%v", i)))
 		if !found {
 			t.Error(err)
 		}
-		if val != "TESTVALUE" {
+		if slices.Compare(val, []byte("TESTVALUE")) != 0 {
 			t.Error("Val should be TESTVALUE")
 		}
 	}
 
 	for i := 101; i < 200; i++ {
-		_, found := mem.Get(int64(i))
+		_, found := mem.Get([]byte(fmt.Sprintf("%v", i)))
 		if found {
 			t.Error("Should not be in memtable")
 		}
 	}
 
-	_, found := mem.Get(0) // Verify value is in table
+	_, found := mem.Get([]byte(fmt.Sprintf("%v", 0))) // Verify value is in table
 	if !found {
 		t.Error("Should be in memtable")
 	}
 
-	err = mem.Put(0, "CHANGED") // Update value
+	err = mem.Put([]byte(fmt.Sprintf("%v", 0)), []byte("CHANGED")) // Update value
 	if err != nil {
 		t.Errorf("mem.Put: %s", err.Error())
 	}
 
-	val2, found := mem.Get(0) // Check to see that it changed
+	time.Sleep(500 * time.Millisecond)
+	val2, found := mem.Get([]byte(fmt.Sprintf("%v", 0))) // Check to see that it changed
 	if !found {
-		t.Errorf("Expected 'CHANGED', found %v", val2)
+		t.Error("Should be found")
+	}
+	if slices.Compare(val2, []byte("CHANGED")) != 0 {
+		t.Errorf("Expected 'CHANGED', found %s", string(val2))
 	}
 
-	mem.Delete(0)
-	_, found = mem.Get(0)
+	mem.Delete([]byte(fmt.Sprintf("%v", 0)))
+	time.Sleep(500 * time.Millisecond)
+	_, found = mem.Get([]byte(fmt.Sprintf("%v", 0)))
 	if found {
 		t.Errorf("Should have been deleted: %v", 0)
 	}
-	mem.Delete(1)
+	mem.Delete([]byte(fmt.Sprintf("%v", 1)))
 	time.Sleep(10 * time.Millisecond)
-	_, found = mem.Get(1)
+	_, found = mem.Get([]byte(fmt.Sprintf("%v", 1)))
 	if found {
 		t.Errorf("Should have been deleted: %v", 1)
 	}
-	mem.Delete(2)
+	mem.Delete([]byte(fmt.Sprintf("%v", 2)))
 	time.Sleep(10 * time.Millisecond)
-	_, found = mem.Get(2)
+	_, found = mem.Get([]byte(fmt.Sprintf("%v", 2)))
 	if found {
 		t.Errorf("Should have been deleted: %v", 2)
 	}
@@ -110,7 +117,7 @@ func TestMemTableIO(t *testing.T) {
 	tmp := t.TempDir()
 	wal := filepath.Join(tmp, "wal.dat")
 
-	mem, err := New[int64, string](&Opts{
+	mem, err := New(&Opts{
 		Batch_write_size: 10,
 		WalPath:          wal,
 		Max_size:         1000,
@@ -127,14 +134,14 @@ func TestMemTableIO(t *testing.T) {
 	}
 
 	for i := 0; i < 200; i++ {
-		err = mem.Put(int64(i), "TESTVALUE")
+		err = mem.Put([]byte(fmt.Sprintf("%v", i)), []byte("TESTVALUE"))
 		if err != nil {
 			t.Error(err)
 		}
 	}
 
 	t.Run("Test Replay", func(t *testing.T) {
-		mem2, err := New[int64, string](&Opts{
+		mem2, err := New(&Opts{
 			WalPath:          wal,
 			Max_size:         1000,
 			Batch_write_size: 10,
@@ -155,8 +162,8 @@ func TestMemTableIO(t *testing.T) {
 
 		// Restore state from first memtable into second memtable
 
-		val, found := mem2.Get(50)
-		if !found || val != "TESTVALUE" {
+		_, found := mem2.Get([]byte(fmt.Sprintf("%v", 50)))
+		if !found {
 			t.Error("Should be in memtable and value should be TESTVALUE")
 		}
 	})

@@ -5,14 +5,16 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/dillonkmcquade/gostore/internal/filter"
+	"github.com/dillonkmcquade/gostore/internal/pb"
 	"github.com/dillonkmcquade/gostore/internal/sstable"
 )
 
-func newTestLevel(baseDir string, n int) *Level[int32, string] {
-	l := &Level[int32, string]{
+func newTestLevel(baseDir string, n int) *Level {
+	l := &Level{
 		Path:    filepath.Join(baseDir, fmt.Sprintf("l%v", n)),
 		Number:  n,
 		Size:    0,
@@ -20,7 +22,7 @@ func newTestLevel(baseDir string, n int) *Level[int32, string] {
 	}
 
 	for i := 0; i < 10; i++ {
-		t := sstable.New(&sstable.Opts[int32, string]{
+		t := sstable.New(&sstable.Opts{
 			BloomOpts: &filter.Opts{
 				Size: 100,
 				Path: filepath.Join(baseDir, "filters"),
@@ -29,7 +31,7 @@ func newTestLevel(baseDir string, n int) *Level[int32, string] {
 		})
 
 		for j := 0; j < 10; j++ {
-			t.Entries = append(t.Entries, &sstable.Entry[int32, string]{Key: int32(rand.Intn(100)), Value: "TEST", Operation: sstable.INSERT})
+			t.Entries = append(t.Entries, &pb.SSTable_Entry{Key: []byte(fmt.Sprintf("%v", int32(rand.Intn(100)))), Value: []byte("TEST"), Op: pb.Operation_INSERT})
 		}
 	}
 	os.MkdirAll(l.Path, 0750)
@@ -39,7 +41,7 @@ func newTestLevel(baseDir string, n int) *Level[int32, string] {
 
 func TestLevel0Compaction(t *testing.T) {
 	tmp := t.TempDir()
-	man, err := New[int32, string](&Opts{
+	man, err := New(&Opts{
 		Path: filepath.Join(tmp, "manifest.json"),
 		LevelPaths: []string{
 			filepath.Join(tmp, "l0"), filepath.Join(tmp, "l1"), filepath.Join(tmp, "l2"), filepath.Join(tmp, "l3"),
@@ -57,61 +59,61 @@ func TestLevel0Compaction(t *testing.T) {
 		t.Error(err)
 	}
 
-	t1 := sstable.New(&sstable.Opts[int32, string]{
+	t1 := sstable.New(&sstable.Opts{
 		BloomOpts: &filter.Opts{
 			Size: 100,
 			Path: man.BloomPath,
 		},
 		DestDir: man.Levels[0].Path,
-		Entries: []*sstable.Entry[int32, string]{
+		Entries: []*pb.SSTable_Entry{
 			{
-				Operation: sstable.INSERT,
-				Key:       0,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{0},
+				Value: []byte("TEST"),
 			},
 			{
-				Operation: sstable.INSERT,
-				Key:       1,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{2},
+				Value: []byte("TEST"),
 			},
 			{
-				Operation: sstable.INSERT,
-				Key:       2,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{3},
+				Value: []byte("TEST"),
 			},
 			{
-				Operation: sstable.INSERT,
-				Key:       3,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{4},
+				Value: []byte("TEST"),
 			},
 		},
 	})
-	t2 := sstable.New(&sstable.Opts[int32, string]{
+	t2 := sstable.New(&sstable.Opts{
 		BloomOpts: &filter.Opts{
 			Size: 100,
 			Path: man.BloomPath,
 		},
 		DestDir: man.Levels[0].Path,
-		Entries: []*sstable.Entry[int32, string]{
+		Entries: []*pb.SSTable_Entry{
 			{
-				Operation: sstable.INSERT,
-				Key:       5,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{5},
+				Value: []byte("TEST"),
 			},
 			{
-				Operation: sstable.INSERT,
-				Key:       6,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{6},
+				Value: []byte("TEST"),
 			},
 			{
-				Operation: sstable.INSERT,
-				Key:       7,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{7},
+				Value: []byte("TEST"),
 			},
 			{
-				Operation: sstable.INSERT,
-				Key:       8,
-				Value:     "TEST",
+				Op:    pb.Operation_INSERT,
+				Key:   []byte{8},
+				Value: []byte("TEST"),
 			},
 		},
 	})
@@ -123,11 +125,11 @@ func TestLevel0Compaction(t *testing.T) {
 		if len(man.Levels[1].Tables) != 4 {
 			t.Error("Should be 4")
 		}
-		if man.Levels[1].Tables[0].First != 0 {
+		if slices.Compare(man.Levels[1].Tables[0].First, []byte{0}) != 0 {
 			t.Error("Should be 0")
 		}
-		if man.Levels[1].Tables[0].Last != 1 {
-			t.Error("Should be 0")
+		if slices.Compare(man.Levels[1].Tables[0].Last, []byte{2}) != 0 {
+			t.Error("Should be 2")
 		}
 		if len(man.Levels[0].Tables) != 0 {
 			t.Error("Level 0 should be empty after compaction")

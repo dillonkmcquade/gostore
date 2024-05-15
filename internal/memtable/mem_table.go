@@ -142,11 +142,10 @@ func (mem *GostoreMemTable) Snapshot() *sstable.SSTable {
 	sstable := sstable.New(&sstable.Opts{
 		DestDir:   mem.level0Dir,
 		BloomOpts: mem.bloomOpts,
+		Entries:   make([]*pb.SSTable_Entry, 0, mem.rbt.Size()),
 	})
 
-	iter := mem.rbt.Values()
-	for iter.HasNext() {
-		node := iter.Next()
+	for node := range mem.rbt.Values() {
 		sstable.Entries = append(sstable.Entries, node)
 		sstable.Filter.Add(node.Key)
 	}

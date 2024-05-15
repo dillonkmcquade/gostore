@@ -36,9 +36,7 @@ func Merge(tables ...*SSTable) *SSTable {
 		Entries: make([]*pb.SSTable_Entry, 0, tree.Size()),
 	}
 
-	iter := tree.Values()
-	for iter.HasNext() {
-		node := iter.Next()
+	for node := range tree.Values() {
 		sstable.Entries = append(sstable.Entries, node)
 	}
 	sstable.First = sstable.Entries[0].Key

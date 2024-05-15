@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dillonkmcquade/gostore/internal/filter"
 	"github.com/dillonkmcquade/gostore/internal/manifest"
@@ -232,6 +233,7 @@ func (store *GoStore) Close() error {
 	if err != nil {
 		slog.Error(err.Error())
 	}
+	time.Sleep(500 * time.Millisecond)
 	err = store.manifest.Close()
 	if err != nil {
 		slog.Error(err.Error())

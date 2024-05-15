@@ -23,8 +23,8 @@ func New() *GoStoreRPC {
 	return &GoStoreRPC{tree: tree}
 }
 
-func (r *GoStoreRPC) Close() {
-	r.tree.Close()
+func (r *GoStoreRPC) Close() error {
+	return r.tree.Close()
 }
 
 func (r *GoStoreRPC) Write(ctx context.Context, in *pb.WriteRequest) (*pb.WriteReply, error) {

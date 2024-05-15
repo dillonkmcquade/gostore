@@ -116,10 +116,8 @@ func TestRBTIterator(t *testing.T) {
 			t.Error("Should be 5")
 		}
 
-		iter := tree.Values()
 		count := 0
-		for iter.HasNext() {
-			val := iter.Next()
+		for val := range tree.Values() {
 			if val != elements[count] {
 				t.Errorf("%v should be %v", val, elements[count])
 			}
@@ -140,10 +138,8 @@ func TestRBTIterator(t *testing.T) {
 			tree.Put(i, element)
 		}
 
-		iter := tree.Values()
 		count := 0
-		for iter.HasNext() {
-			val := iter.Next()
+		for val := range tree.Values() {
 			if val != elements[count] {
 				t.Errorf("%v should be %v", val, elements[count])
 			}

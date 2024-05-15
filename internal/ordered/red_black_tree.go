@@ -49,65 +49,48 @@ type Iterator[V any] interface {
 
 // Iterable specifies a struct that may return an Iterator
 type Iterable[K any, V any] interface {
-	Keys() Iterator[K]
-	Values() Iterator[V]
-}
-
-type RBTIterator[T any] struct {
-	nodes []T
-	index int
-}
-
-func (iter *RBTIterator[V]) HasNext() bool {
-	return iter.index < len(iter.nodes)
-}
-
-func (iter *RBTIterator[V]) Next() V {
-	node := iter.nodes[iter.index]
-	iter.index++
-	return node
-}
-
-func newValueIterator[K any, V any](root *Node[K, V], size uint) *RBTIterator[V] {
-	list := make([]V, 0, size)
-	sortedNodeList(root, &list)
-	return &RBTIterator[V]{nodes: list}
-}
-
-func newKeyIterator[K any, V any](root *Node[K, V], size uint) *RBTIterator[K] {
-	list := make([]K, 0, size)
-	sortedKeyList(root, &list)
-	return &RBTIterator[K]{nodes: list}
+	Keys() <-chan K
+	Values() <-chan V
 }
 
 // Traverses the tree inorder and appends each node to the list
-func sortedNodeList[K any, V any](root *Node[K, V], list *[]V) {
+func inorderValueTraversal[K any, V any](root *Node[K, V], ch chan<- V) {
 	if root == nil {
 		return
 	}
-	sortedNodeList(root.left, list)
-	*list = append(*list, root.Value)
-	sortedNodeList(root.right, list)
+	inorderValueTraversal(root.left, ch)
+	ch <- root.Value
+	inorderValueTraversal(root.right, ch)
 }
 
-func sortedKeyList[K any, V any](root *Node[K, V], list *[]K) {
+func inorderKeyTraversal[K any, V any](root *Node[K, V], ch chan<- K) {
 	if root == nil {
 		return
 	}
-	sortedKeyList(root.left, list)
-	*list = append(*list, root.Key)
-	sortedKeyList(root.right, list)
+	inorderKeyTraversal(root.left, ch)
+	ch <- root.Key
+	inorderKeyTraversal(root.right, ch)
 }
 
 func (rbt *RedBlackTree[K, V]) Restore(entry wal.LogEntry) {
 }
 
-func (rbt *RedBlackTree[K, V]) Values() Iterator[V] {
-	return newValueIterator(rbt.root, rbt.Size())
+func (rbt *RedBlackTree[K, V]) Values() <-chan V {
+	ch := make(chan V)
+	go func() {
+		defer close(ch)
+		inorderValueTraversal(rbt.root, ch)
+	}()
+	return ch
 }
 
-func (rbt *RedBlackTree[K, V]) Keys() Iterator[K] {
-	return newKeyIterator(rbt.root, rbt.Size())
+func (rbt *RedBlackTree[K, V]) Keys() <-chan K {
+	ch := make(chan K)
+	go func() {
+		defer close(ch)
+		inorderKeyTraversal(rbt.root, ch)
+	}()
+	return ch
 }
 
 func (rbt *RedBlackTree[K, V]) Size() uint {
@@ -125,7 +108,6 @@ func (rbt *RedBlackTree[K, V]) Put(key K, val V) {
 	rbt.root.isBlack = true
 }
 
-// Update node Op to be DELETE
 func (rbt *RedBlackTree[K, V]) Delete(key K) {
 	rbt.root = rbt.put(rbt.root, key, Node[K, V]{}.Value)
 	rbt.root.isBlack = true

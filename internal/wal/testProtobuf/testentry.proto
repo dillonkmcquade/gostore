@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+option go_package = "github.com/dillonkmcquade/internal/lsm/wal/testProtobuf";
+
+message TestEntry { string name = 1; }

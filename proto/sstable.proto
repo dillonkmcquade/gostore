@@ -1,5 +1,9 @@
 syntax = "proto3";
 
+package gostore.proto;
+
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/dillonkmcquade/internal/pb";
 
 message SSTable {
@@ -8,9 +12,36 @@ message SSTable {
     bytes value = 2;
     Operation op = 3;
   }
+  message Filter {
+    string name = 1;
+    uint64 size = 2;
+  }
+
   repeated Entry entries = 1;
+  optional string name = 2;
+  optional Filter filter = 3;
+  optional bytes first = 4;
+  optional bytes last = 5;
+  optional bytes created_on = 6;
+  optional int64 size = 7;
+
+  google.protobuf.Timestamp last_updated = 8;
 }
 enum Operation {
-  INSERT = 0;
-  DELETE = 1;
+  OPERATION_UNSPECIFIED = 0;
+  OPERATION_INSERT = 1;
+  OPERATION_DELETE = 2;
+}
+
+message ManifestEntry {
+  enum Op {
+    OP_UNSPECIFIED = 0;
+    OP_ADDTABLE = 1;
+    OP_REMOVETABLE = 2;
+    OP_CLEARTABLE = 3;
+  }
+
+  Op op = 1;
+  int32 level = 2;
+  SSTable table = 3;
 }

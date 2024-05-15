@@ -71,7 +71,7 @@ func NewDefaultLSMOpts(gostorepath string) *LSMOpts {
 			LevelZero: filepath.Join(gostorepath, "l0"),
 		},
 		ManifestOpts: &manifest.Opts{
-			Path:            filepath.Join(gostorepath, "manifest.log"),
+			Path:            filepath.Join(gostorepath, "manifest.txtpb"),
 			Num_levels:      4,
 			Level0_max_size: 300000000,
 			LevelPaths: []string{
@@ -126,7 +126,7 @@ func NewTestLSMOpts(gostorepath string) *LSMOpts {
 				filepath.Join(gostorepath, "l0"), filepath.Join(gostorepath, "l1"),
 				filepath.Join(gostorepath, "l2"), filepath.Join(gostorepath, "l3"),
 			},
-			Path:             filepath.Join(gostorepath, "manifest.log"),
+			Path:             filepath.Join(gostorepath, "manifest.txtpb"),
 			Num_levels:       4,
 			Level0_max_size:  539375,
 			SSTable_max_size: 1000,
@@ -189,7 +189,10 @@ func New(opts *LSMOpts) (LSM, error) {
 func (store *GoStore) waitForFlush() {
 	for table := range store.memTable.FlushedTables() {
 		slog.Debug("Received flushed table, adding to L0")
-		store.manifest.AddTable(table, 0)
+		err := store.manifest.AddTable(table, 0)
+		if err != nil {
+			slog.Error(err.Error())
+		}
 	}
 }
 
@@ -225,6 +228,13 @@ func (store *GoStore) Delete(key []byte) error {
 
 // Close closes all associated resources
 func (store *GoStore) Close() error {
-	store.memTable.Close()
-	return store.manifest.Close()
+	err := store.memTable.Close()
+	if err != nil {
+		slog.Error(err.Error())
+	}
+	err = store.manifest.Close()
+	if err != nil {
+		slog.Error(err.Error())
+	}
+	return nil
 }

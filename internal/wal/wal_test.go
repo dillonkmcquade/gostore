@@ -1,26 +1,25 @@
 package wal
 
 import (
-	"encoding/json"
-	"io"
+	"bufio"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dillonkmcquade/gostore/internal/wal/testProtobuf"
+	"google.golang.org/protobuf/proto"
 )
-
-type TestEntry struct{}
-
-func (t *TestEntry) Apply(c interface{}) {
-}
 
 func TestWALWrite(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := New[*TestEntry](filepath.Join(tmpdir, "wal.db"), 10)
+	wal, err := New[*testProtobuf.TestEntry](filepath.Join(tmpdir, "wal.db"), 1)
 	if err != nil {
 		t.Error(err)
 	}
 	defer wal.Close()
-	err = wal.Write(&TestEntry{})
+	err = wal.Write(&testProtobuf.TestEntry{
+		Name: "TEST",
+	})
 	if err != nil {
 		t.Error("error on Write:14")
 	}
@@ -28,13 +27,13 @@ func TestWALWrite(t *testing.T) {
 
 func TestWALDecode(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := New[*TestEntry](filepath.Join(tmpdir, "wal.db"), 10)
+	wal, err := New[*testProtobuf.TestEntry](filepath.Join(tmpdir, "wal.db"), 10)
 	if err != nil {
 		t.Error(err)
 	}
 	defer wal.Close()
 	for i := 0; i < 201; i++ {
-		err = wal.Write(&TestEntry{})
+		err = wal.Write(&testProtobuf.TestEntry{Name: "TEST"})
 		if err != nil {
 			t.Error(err)
 		}
@@ -45,34 +44,31 @@ func TestWALDecode(t *testing.T) {
 		t.Error(err)
 	}
 	defer file.Close()
-	dec := json.NewDecoder(file)
 
-	var entries []*TestEntry
-	for {
-		var entry []*TestEntry
-		if err = dec.Decode(&entry); err != nil {
-			if err == io.EOF {
-				break
-			} else {
-				t.Error(err)
-			}
+	scanner := bufio.NewScanner(file)
+	scanner.Split(SplitProtobuf)
+
+	for scanner.Scan() {
+		var entry testProtobuf.TestEntry
+		err := proto.Unmarshal(scanner.Bytes(), &entry)
+		if err != nil {
+			t.Error(err)
 		}
-		entries = append(entries, entry...)
 	}
-	if len(entries) != 200 {
-		t.Errorf("Should have decoded 200 entries, received %v", len(entries))
+	if err = scanner.Err(); err != nil {
+		t.Error(err)
 	}
 }
 
 func TestWALDiscard(t *testing.T) {
 	tmpdir := t.TempDir()
-	wal, err := New[*TestEntry](filepath.Join(tmpdir, "wal.dat"), 10)
+	wal, err := New[*testProtobuf.TestEntry](filepath.Join(tmpdir, "wal.dat"), 10)
 	if err != nil {
 		t.Error(err)
 	}
 	defer wal.Close()
 	for i := 0; i < 25; i++ {
-		err = wal.Write(&TestEntry{})
+		err = wal.Write(&testProtobuf.TestEntry{Name: "TEST"})
 		if err != nil {
 			t.Error("error on Write:14")
 		}

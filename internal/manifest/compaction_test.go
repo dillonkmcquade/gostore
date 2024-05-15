@@ -1,8 +1,8 @@
 package manifest
 
 import (
-	"fmt"
-	"math/rand"
+	// "fmt"
+	// "math/rand"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,31 +13,31 @@ import (
 	"github.com/dillonkmcquade/gostore/internal/sstable"
 )
 
-func newTestLevel(baseDir string, n int) *Level {
-	l := &Level{
-		Path:    filepath.Join(baseDir, fmt.Sprintf("l%v", n)),
-		Number:  n,
-		Size:    0,
-		MaxSize: 300,
-	}
-
-	for i := 0; i < 10; i++ {
-		t := sstable.New(&sstable.Opts{
-			BloomOpts: &filter.Opts{
-				Size: 100,
-				Path: filepath.Join(baseDir, "filters"),
-			},
-			DestDir: l.Path,
-		})
-
-		for j := 0; j < 10; j++ {
-			t.Entries = append(t.Entries, &pb.SSTable_Entry{Key: []byte(fmt.Sprintf("%v", int32(rand.Intn(100)))), Value: []byte("TEST"), Op: pb.Operation_INSERT})
-		}
-	}
-	os.MkdirAll(l.Path, 0750)
-	os.MkdirAll(filepath.Join(baseDir, "filters"), 0750)
-	return l
-}
+// func newTestLevel(baseDir string, n int) *Level {
+// 	l := &Level{
+// 		Path:    filepath.Join(baseDir, fmt.Sprintf("l%v", n)),
+// 		Number:  n,
+// 		Size:    0,
+// 		MaxSize: 300,
+// 	}
+//
+// 	for i := 0; i < 10; i++ {
+// 		t := sstable.New(&sstable.Opts{
+// 			BloomOpts: &filter.Opts{
+// 				Size: 100,
+// 				Path: filepath.Join(baseDir, "filters"),
+// 			},
+// 			DestDir: l.Path,
+// 		})
+//
+// 		for j := 0; j < 10; j++ {
+// 			t.Entries = append(t.Entries, &pb.SSTable_Entry{Key: []byte(fmt.Sprintf("%v", int32(rand.Intn(100)))), Value: []byte("TEST"), Op: pb.Operation_OPERATION_INSERT})
+// 		}
+// 	}
+// 	os.MkdirAll(l.Path, 0750)
+// 	os.MkdirAll(filepath.Join(baseDir, "filters"), 0750)
+// 	return l
+// }
 
 func TestLevel0Compaction(t *testing.T) {
 	tmp := t.TempDir()
@@ -67,22 +67,22 @@ func TestLevel0Compaction(t *testing.T) {
 		DestDir: man.Levels[0].Path,
 		Entries: []*pb.SSTable_Entry{
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{0},
 				Value: []byte("TEST"),
 			},
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{2},
 				Value: []byte("TEST"),
 			},
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{3},
 				Value: []byte("TEST"),
 			},
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{4},
 				Value: []byte("TEST"),
 			},
@@ -96,22 +96,22 @@ func TestLevel0Compaction(t *testing.T) {
 		DestDir: man.Levels[0].Path,
 		Entries: []*pb.SSTable_Entry{
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{5},
 				Value: []byte("TEST"),
 			},
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{6},
 				Value: []byte("TEST"),
 			},
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{7},
 				Value: []byte("TEST"),
 			},
 			{
-				Op:    pb.Operation_INSERT,
+				Op:    pb.Operation_OPERATION_INSERT,
 				Key:   []byte{8},
 				Value: []byte("TEST"),
 			},

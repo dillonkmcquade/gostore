@@ -13,9 +13,9 @@ var t1 = &SSTable{
 	First: []byte{1},
 	Last:  []byte{3},
 	Entries: []*pb.SSTable_Entry{
-		{Op: pb.Operation_INSERT, Key: []byte{1}, Value: []byte("value1")},
-		{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
-		{Op: pb.Operation_INSERT, Key: []byte{3}, Value: []byte("value3")},
+		{Op: pb.Operation_OPERATION_INSERT, Key: []byte{1}, Value: []byte("value1")},
+		{Op: pb.Operation_OPERATION_INSERT, Key: []byte{2}, Value: []byte("value2")},
+		{Op: pb.Operation_OPERATION_INSERT, Key: []byte{3}, Value: []byte("value3")},
 	},
 }
 
@@ -23,9 +23,9 @@ var t2 = &SSTable{
 	First: []byte{4},
 	Last:  []byte{9},
 	Entries: []*pb.SSTable_Entry{
-		{Op: pb.Operation_INSERT, Key: []byte{4}, Value: []byte("value4")},
-		{Op: pb.Operation_INSERT, Key: []byte{5}, Value: []byte("value5")},
-		{Op: pb.Operation_INSERT, Key: []byte{9}, Value: []byte("value9")},
+		{Op: pb.Operation_OPERATION_INSERT, Key: []byte{4}, Value: []byte("value4")},
+		{Op: pb.Operation_OPERATION_INSERT, Key: []byte{5}, Value: []byte("value5")},
+		{Op: pb.Operation_OPERATION_INSERT, Key: []byte{9}, Value: []byte("value9")},
 	},
 }
 
@@ -57,11 +57,11 @@ func TestFindOverlappingTables(t *testing.T) {
 			First: []byte{1},
 			Last:  []byte{5},
 			Entries: []*pb.SSTable_Entry{
-				{Op: pb.Operation_INSERT, Key: []byte{1}, Value: []byte("value1")},
-				{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
-				{Op: pb.Operation_DELETE, Key: []byte{3}, Value: []byte("")},
-				{Op: pb.Operation_INSERT, Key: []byte{4}, Value: []byte("value3")},
-				{Op: pb.Operation_INSERT, Key: []byte{5}, Value: []byte("value4")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{1}, Value: []byte("value1")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{2}, Value: []byte("value2")},
+				{Op: pb.Operation_OPERATION_DELETE, Key: []byte{3}, Value: []byte("")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{4}, Value: []byte("value3")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{5}, Value: []byte("value4")},
 			},
 		}
 
@@ -130,12 +130,12 @@ func TestSplit(t *testing.T) {
 		First: []byte{4},
 		Last:  []byte{99},
 		Entries: []*pb.SSTable_Entry{
-			{Op: pb.Operation_INSERT, Key: []byte{4}, Value: []byte("value4")},
-			{Op: pb.Operation_INSERT, Key: []byte{5}, Value: []byte("value5")},
-			{Op: pb.Operation_INSERT, Key: []byte{19}, Value: []byte("value9")},
-			{Op: pb.Operation_INSERT, Key: []byte{29}, Value: []byte("value9")},
-			{Op: pb.Operation_INSERT, Key: []byte{39}, Value: []byte("value9")},
-			{Op: pb.Operation_INSERT, Key: []byte{49}, Value: []byte("value9")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{4}, Value: []byte("value4")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{5}, Value: []byte("value5")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{19}, Value: []byte("value9")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{29}, Value: []byte("value9")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{39}, Value: []byte("value9")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{49}, Value: []byte("value9")},
 		},
 	}
 	split := Split(tbl, 2, &Opts{

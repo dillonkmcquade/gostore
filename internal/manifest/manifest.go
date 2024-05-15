@@ -1,10 +1,9 @@
 package manifest
 
 import (
-	"encoding/gob"
+	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -12,8 +11,10 @@ import (
 	"time"
 
 	"github.com/dillonkmcquade/gostore/internal/ordered"
+	"github.com/dillonkmcquade/gostore/internal/pb"
 	"github.com/dillonkmcquade/gostore/internal/sstable"
 	"github.com/dillonkmcquade/gostore/internal/wal"
+	"google.golang.org/protobuf/proto"
 )
 
 type ManifestOp byte
@@ -27,19 +28,48 @@ const (
 type ManifestEntry struct {
 	Op    ManifestOp
 	Level int
-	Table *sstable.SSTable
+	Table *pb.SSTable
 }
 
-func (entry *ManifestEntry) Apply(c interface{}) {
+func (entry *ManifestEntry) Apply(c interface{}) error {
 	level := c.(*Level)
 	switch entry.Op {
 	case ADDTABLE:
-		level.Add(entry.Table)
+		table, err := sstable.FromProto(entry.Table)
+		if err != nil {
+			return &wal.LogApplyErr{Cause: err}
+		}
+		level.Add(table)
 	case REMOVETABLE:
-		level.Remove(entry.Table)
+		table, err := sstable.FromProto(entry.Table)
+		if err != nil {
+			return &wal.LogApplyErr{Cause: err}
+		}
+		level.Remove(table)
 	case CLEARTABLE:
 		level.Clear()
 	}
+	return nil
+}
+
+func FromProto(p *pb.ManifestEntry) *ManifestEntry {
+	return &ManifestEntry{
+		Op:    ManifestOp(p.GetOp()),
+		Level: int(p.GetLevel()),
+		Table: p.GetTable(),
+	}
+}
+
+func (entry *ManifestEntry) MarshalProto() proto.Message {
+	e := &pb.ManifestEntry{
+		Op:    pb.ManifestEntry_Op(entry.Op),
+		Level: int32(entry.Level),
+		Table: entry.Table,
+	}
+	if entry.Table == nil {
+		e.Table = &pb.SSTable{}
+	}
+	return e
 }
 
 type Manifest struct {
@@ -96,7 +126,7 @@ func New(opts *Opts) (*Manifest, error) {
 	return manifest, nil
 }
 
-var ErrNotFound = errors.New("Not found")
+var ErrNotFound = errors.New("not found")
 
 func (m *Manifest) Search(key []byte) ([]byte, error) {
 	var errs []error
@@ -172,9 +202,12 @@ func (m *Manifest) AddTable(table *sstable.SSTable, level int) error {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 	m.Levels[level].Add(table)
-	slog.Debug("Adding table to level", "level", level, "size", m.Levels[level].Size, "maxSize", m.Levels[level].MaxSize, "Should flush", m.Levels[level].Size > m.Levels[level].MaxSize)
-	entry := &ManifestEntry{Op: ADDTABLE, Table: table, Level: level}
-	err := m.wal.Write(entry)
+	pto, err := table.ToProto()
+	if err != nil {
+		return err
+	}
+	entry := &ManifestEntry{Op: ADDTABLE, Table: pto, Level: level}
+	err = m.wal.Write(entry)
 	if err != nil {
 		return fmt.Errorf("wal.Write: %w", err)
 	}
@@ -185,8 +218,12 @@ func (m *Manifest) RemoveTable(table *sstable.SSTable, level int) error {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 	m.Levels[level].Remove(table)
-	entry := &ManifestEntry{Op: REMOVETABLE, Table: table, Level: level}
-	err := m.wal.Write(entry)
+	pto, err := table.ToProto()
+	if err != nil {
+		return err
+	}
+	entry := &ManifestEntry{Op: REMOVETABLE, Table: pto, Level: level}
+	err = m.wal.Write(entry)
 	if err != nil {
 		return fmt.Errorf("encoder.Encode: %w", err)
 	}
@@ -206,8 +243,10 @@ func (m *Manifest) ClearLevel(level int) error {
 }
 
 func (m *Manifest) Close() error {
-	m.waitForCompaction.Wait()
-	close(m.done)
+	m.done <- true
+	if err := m.wal.Close(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -217,17 +256,26 @@ func (m *Manifest) Replay() error {
 	if err != nil {
 		return fmt.Errorf("os.Open: %w", err)
 	}
-	decoder := gob.NewDecoder(file)
 
-	for {
-		var entry ManifestEntry
-		if err := decoder.Decode(&entry); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("decoder.Decode: %w", err)
+	scanner := bufio.NewScanner(file)
+	scanner.Split(wal.SplitProtobuf)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var e pb.ManifestEntry
+		err := proto.Unmarshal(line, &e)
+		if err != nil {
+			return fmt.Errorf("proto.Unmarshal line: %s: %w", scanner.Text(), err)
 		}
-		entry.Apply(m.Levels[entry.Level])
+		entry := FromProto(&e)
+		err = entry.Apply(m.Levels[e.Level])
+		if err != nil {
+			slog.Error("log apply error", "cause", err)
+			return &wal.LogApplyErr{Cause: err}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		slog.Error("scanner error", "cause", err)
+		return err
 	}
 	for _, level := range m.Levels {
 		for _, tbl := range level.Tables {

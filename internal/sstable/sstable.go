@@ -124,6 +124,9 @@ func (table *SSTable) Open() error {
 	}
 
 	b, err := io.ReadAll(table.file)
+	if err != nil {
+		return fmt.Errorf("io.ReadAll: %w", err)
+	}
 
 	tbl := &pb.SSTable{}
 	err = proto.Unmarshal(b, tbl)
@@ -157,4 +160,27 @@ func (table *SSTable) Search(key []byte) ([]byte, bool) {
 		return table.Entries[idx].Value, true
 	}
 	return []byte{}, false
+}
+
+func (table *SSTable) ToProto() (*pb.SSTable, error) {
+	createdOn, err := table.CreatedOn.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	p := &pb.SSTable{
+		Entries:   []*pb.SSTable_Entry{},
+		Name:      &table.Name,
+		First:     table.First,
+		Last:      table.Last,
+		Size:      &table.Size,
+		CreatedOn: createdOn,
+	}
+	if table.Filter == nil {
+		return p, nil
+	}
+	p.Filter = &pb.SSTable_Filter{
+		Name: table.Filter.Name,
+		Size: table.Filter.Size,
+	}
+	return p, nil
 }

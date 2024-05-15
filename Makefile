@@ -8,10 +8,7 @@ build:
 proto-compile:
 	protoc -I=proto --go_out=internal/pb --go_opt=paths=source_relative \
 	--go-grpc_out=internal/pb --go-grpc_opt=paths=source_relative \
-	proto/sstable.proto
-	protoc -I=proto --go_out=internal/pb --go_opt=paths=source_relative \
-	--go-grpc_out=internal/pb --go-grpc_opt=paths=source_relative \
-	proto/gostore.proto
+	proto/gostore.proto proto/sstable.proto
 
 run:
 	$(debug) go run cmd/gostore/main.go -port=5000
@@ -21,6 +18,7 @@ clean:
 	rm -f *.prof
 	rm -f *.test
 	rm -f ~/.gostore/filters/*
+	rm -f ~/.gostore/*.txtpb
 	rm -f ~/.gostore/*.log
 	rm -f ~/.gostore/l0/*
 	rm -f ~/.gostore/l1/*

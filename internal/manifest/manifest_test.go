@@ -57,9 +57,9 @@ func TestManifestAddTable(t *testing.T) {
 		Size:      100,
 		CreatedOn: time.Now(),
 		Entries: []*pb.SSTable_Entry{
-			{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
-			{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
-			{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{10}, Value: []byte("value1")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{12}, Value: []byte("value2")},
+			{Op: pb.Operation_OPERATION_DELETE, Key: []byte{19}, Value: []byte("")},
 		},
 	}
 
@@ -88,9 +88,9 @@ func TestManifestRemoveTable(t *testing.T) {
 		Size:      100,
 		CreatedOn: time.Now(),
 		Entries: []*pb.SSTable_Entry{
-			{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
-			{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
-			{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{10}, Value: []byte("value1")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{12}, Value: []byte("value2")},
+			{Op: pb.Operation_OPERATION_DELETE, Key: []byte{19}, Value: []byte("")},
 		},
 	}
 
@@ -121,9 +121,9 @@ func TestManifest_ClearLevel(t *testing.T) {
 		Size:      100,
 		CreatedOn: time.Now(),
 		Entries: []*pb.SSTable_Entry{
-			{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
-			{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
-			{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{10}, Value: []byte("value1")},
+			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{12}, Value: []byte("value2")},
+			{Op: pb.Operation_OPERATION_DELETE, Key: []byte{19}, Value: []byte("")},
 		},
 	}
 
@@ -132,6 +132,9 @@ func TestManifest_ClearLevel(t *testing.T) {
 		t.Errorf("man.AddTable: %v", err.Error())
 	}
 	err = man.ClearLevel(0)
+	if err != nil {
+		t.Error(err)
+	}
 	if man.Levels[0].Size != 0 || len(man.Levels[0].Tables) != 0 {
 		t.Error("Expected size 0 and table length 0")
 	}
@@ -150,27 +153,27 @@ func newTestManifest(path string) *Manifest {
 					{
 						Entries: []*pb.SSTable_Entry{
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{0},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{1},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{2},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{3},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{4},
 								Value: []byte("TEST"),
 							},
@@ -184,27 +187,27 @@ func newTestManifest(path string) *Manifest {
 					{
 						Entries: []*pb.SSTable_Entry{
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{50},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{55},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{60},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{70},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{80},
 								Value: []byte("TEST"),
 							},
@@ -225,27 +228,27 @@ func newTestManifest(path string) *Manifest {
 					{
 						Entries: []*pb.SSTable_Entry{
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{7},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{8},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{9},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{10},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{14},
 								Value: []byte("TEST"),
 							},
@@ -259,27 +262,27 @@ func newTestManifest(path string) *Manifest {
 					{
 						Entries: []*pb.SSTable_Entry{
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{21},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{28},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{29},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{31},
 								Value: []byte("TEST"),
 							},
 							{
-								Op:    pb.Operation_INSERT,
+								Op:    pb.Operation_OPERATION_INSERT,
 								Key:   []byte{40},
 								Value: []byte("TEST"),
 							},

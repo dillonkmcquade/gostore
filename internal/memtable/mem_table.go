@@ -1,7 +1,7 @@
 package memtable
 
 import (
-	"encoding/json"
+	"bufio"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +15,7 @@ import (
 	"github.com/dillonkmcquade/gostore/internal/pb"
 	"github.com/dillonkmcquade/gostore/internal/sstable"
 	"github.com/dillonkmcquade/gostore/internal/wal"
+	"google.golang.org/protobuf/proto"
 )
 
 // In-memory balanced key-value store
@@ -94,6 +95,7 @@ func (mem *GostoreMemTable) flush() {
 
 	slog.Debug("Sending snapshot over flushChan")
 	mem.flushChan <- snapshot
+	mem.wg.Done()
 
 	// Discard memTable & write-ahead log
 	mem.Clear()
@@ -109,21 +111,24 @@ func (mem *GostoreMemTable) replay(filename string) error {
 	}
 	defer file.Close()
 
-	dec := json.NewDecoder(file)
-	for {
-		entry := make([]*pb.SSTable_Entry, mem.wal.Batch_write_size)
-		if decodeErr := dec.Decode(&entry); decodeErr != nil {
-			if decodeErr == io.EOF {
-				break // End of log file
-			} else {
-				return &wal.LogApplyErr{Cause: decodeErr}
-			}
+	scanner := bufio.NewScanner(file)
+	scanner.Split(wal.SplitProtobuf)
+	for scanner.Scan() {
+		var e pb.SSTable_Entry
+		err := proto.Unmarshal(scanner.Bytes(), &e)
+		if err != nil {
+			return fmt.Errorf("proto.Unmarshal: %w", err)
 		}
-		// Apply the entry to the database
-		for _, e := range entry {
-			e.Apply(mem.rbt)
+		err = e.Apply(mem.rbt)
+		if err != nil {
+			slog.Error("log apply error", "cause", err)
+			return &wal.LogApplyErr{Cause: err}
 		}
 
+	}
+	if err := scanner.Err(); err != nil {
+		slog.Error("scanner error", "cause", err)
+		return err
 	}
 	return nil
 }
@@ -159,6 +164,7 @@ func (mem *GostoreMemTable) processWrites() {
 			panic(fmt.Errorf("wal.Write: %w", err))
 		}
 		if mem.shouldFlush() {
+			mem.wg.Add(1)
 			mem.flush()
 		}
 		mem.wg.Done()
@@ -171,14 +177,14 @@ func (mem *GostoreMemTable) shouldFlush() bool {
 }
 
 func (mem *GostoreMemTable) Put(key []byte, val []byte) error {
-	entry := &pb.SSTable_Entry{Key: key, Value: val, Op: pb.Operation_INSERT}
+	entry := &pb.SSTable_Entry{Key: key, Value: val, Op: pb.Operation_OPERATION_INSERT}
 	mem.wg.Add(1)
 	mem.writeChan <- entry
 	return nil
 }
 
 func (mem *GostoreMemTable) Delete(key []byte) {
-	placeholder := &pb.SSTable_Entry{Key: key, Value: []byte{}, Op: pb.Operation_DELETE}
+	placeholder := &pb.SSTable_Entry{Key: key, Value: []byte{}, Op: pb.Operation_OPERATION_DELETE}
 	mem.wg.Add(1)
 	mem.writeChan <- placeholder
 }
@@ -187,7 +193,7 @@ func (mem *GostoreMemTable) Get(key []byte) ([]byte, bool) {
 	mem.mut.RLock()
 	defer mem.mut.RUnlock()
 	if entry, found := mem.rbt.Get(key); found {
-		if entry.Op == pb.Operation_DELETE {
+		if entry.Op == pb.Operation_OPERATION_DELETE {
 			return []byte{}, false
 		}
 		return entry.Value, true
@@ -203,12 +209,18 @@ func (mem *GostoreMemTable) Size() uint {
 
 func (mem *GostoreMemTable) Clear() {
 	mem.rbt.Clear()
-	mem.wal.Discard()
+	err := mem.wal.Discard()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (mem *GostoreMemTable) Close() error {
 	mem.wg.Wait()
 	close(mem.writeChan)
 	close(mem.flushChan)
-	return mem.wal.Close()
+	if err := mem.wal.Close(); err != nil {
+		return err
+	}
+	return nil
 }

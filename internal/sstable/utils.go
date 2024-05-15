@@ -8,6 +8,7 @@ import (
 
 	"github.com/dillonkmcquade/gostore/internal"
 	"github.com/dillonkmcquade/gostore/internal/assert"
+	"github.com/dillonkmcquade/gostore/internal/filter"
 	"github.com/dillonkmcquade/gostore/internal/ordered"
 	"github.com/dillonkmcquade/gostore/internal/pb"
 )
@@ -113,4 +114,24 @@ func Overlapping(upper_table *SSTable, lower_level []*SSTable) []*SSTable {
 		}
 	}
 	return overlaps
+}
+
+func FromProto(p *pb.SSTable) (*SSTable, error) {
+	var tm time.Time
+	err := tm.UnmarshalBinary(p.GetCreatedOn())
+	if err != nil {
+		return nil, err
+	}
+	t := &SSTable{
+		Entries: p.GetEntries(),
+		Filter: &filter.BloomFilter{
+			Name: p.GetFilter().GetName(),
+			Size: p.GetFilter().GetSize(),
+		},
+		Size:  p.GetSize(),
+		Name:  p.GetName(),
+		First: p.GetFirst(),
+		Last:  p.GetLast(),
+	}
+	return t, nil
 }

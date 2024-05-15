@@ -16,18 +16,18 @@ func TestSSTableOverlaps(t *testing.T) {
 			First: []byte{0},
 			Last:  []byte{9},
 			Entries: []*pb.SSTable_Entry{
-				{Op: pb.Operation_INSERT, Key: []byte{0}, Value: []byte("value1")},
-				{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
-				{Op: pb.Operation_DELETE, Key: []byte{9}, Value: []byte("")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{0}, Value: []byte("value1")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{2}, Value: []byte("value2")},
+				{Op: pb.Operation_OPERATION_DELETE, Key: []byte{9}, Value: []byte("")},
 			},
 		}
 		t2 := &SSTable{
 			First: []byte{10},
 			Last:  []byte{19},
 			Entries: []*pb.SSTable_Entry{
-				{Op: pb.Operation_INSERT, Key: []byte{10}, Value: []byte("value1")},
-				{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
-				{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{10}, Value: []byte("value1")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{12}, Value: []byte("value2")},
+				{Op: pb.Operation_OPERATION_DELETE, Key: []byte{19}, Value: []byte("")},
 			},
 		}
 		if t1.Overlaps(t2) || t2.Overlaps(t1) {
@@ -40,18 +40,18 @@ func TestSSTableOverlaps(t *testing.T) {
 			First: []byte{0},
 			Last:  []byte{9},
 			Entries: []*pb.SSTable_Entry{
-				{Op: pb.Operation_INSERT, Key: []byte{0}, Value: []byte("value1")},
-				{Op: pb.Operation_INSERT, Key: []byte{2}, Value: []byte("value2")},
-				{Op: pb.Operation_DELETE, Key: []byte{9}, Value: []byte("")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{0}, Value: []byte("value1")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{2}, Value: []byte("value2")},
+				{Op: pb.Operation_OPERATION_DELETE, Key: []byte{9}, Value: []byte("")},
 			},
 		}
 		t2 := &SSTable{
 			First: []byte{8},
 			Last:  []byte{19},
 			Entries: []*pb.SSTable_Entry{
-				{Op: pb.Operation_INSERT, Key: []byte{8}, Value: []byte("value1")},
-				{Op: pb.Operation_INSERT, Key: []byte{12}, Value: []byte("value2")},
-				{Op: pb.Operation_DELETE, Key: []byte{19}, Value: []byte("")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{8}, Value: []byte("value1")},
+				{Op: pb.Operation_OPERATION_INSERT, Key: []byte{12}, Value: []byte("value2")},
+				{Op: pb.Operation_OPERATION_DELETE, Key: []byte{19}, Value: []byte("")},
 			},
 		}
 		if !t1.Overlaps(t2) {
@@ -196,48 +196,48 @@ func TestSSTableSearch(t *testing.T) {
 	})
 }
 
-func BenchmarkSSTableSearch(b *testing.B) {
-	tmp := b.TempDir()
-	filename := filepath.Join(tmp, "loadtest")
-	entries := testEntries()
-	t1 := &SSTable{
-		Entries:   entries,
-		Name:      filename,
-		First:     []byte{0},
-		Last:      []byte{100},
-		CreatedOn: time.Now(),
-	}
-	b.Run("Search keys in table", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			t1.Search([]byte{2})
-		}
-	})
-}
+// func BenchmarkSSTableSearch(b *testing.B) {
+// 	tmp := b.TempDir()
+// 	filename := filepath.Join(tmp, "loadtest")
+// 	entries := testEntries()
+// 	t1 := &SSTable{
+// 		Entries:   entries,
+// 		Name:      filename,
+// 		First:     []byte{0},
+// 		Last:      []byte{100},
+// 		CreatedOn: time.Now(),
+// 	}
+// 	b.Run("Search keys in table", func(b *testing.B) {
+// 		for i := 0; i < b.N; i++ {
+// 			t1.Search([]byte{2})
+// 		}
+// 	})
+// }
 
 func testEntries() []*pb.SSTable_Entry {
 	return []*pb.SSTable_Entry{
 		{
-			Op:    pb.Operation_INSERT,
+			Op:    pb.Operation_OPERATION_INSERT,
 			Key:   []byte{0},
 			Value: []byte("TESTVALUE0"),
 		},
 		{
-			Op:    pb.Operation_INSERT,
+			Op:    pb.Operation_OPERATION_INSERT,
 			Key:   []byte{1},
 			Value: []byte("TESTVALUE1"),
 		},
 		{
-			Op:    pb.Operation_INSERT,
+			Op:    pb.Operation_OPERATION_INSERT,
 			Key:   []byte{3},
 			Value: []byte("TESTVALUE3"),
 		},
 		{
-			Op:    pb.Operation_INSERT,
+			Op:    pb.Operation_OPERATION_INSERT,
 			Key:   []byte{5},
 			Value: []byte("TESTVALUE5"),
 		},
 		{
-			Op:    pb.Operation_INSERT,
+			Op:    pb.Operation_OPERATION_INSERT,
 			Key:   []byte{100},
 			Value: []byte("TESTVALUE100"),
 		},

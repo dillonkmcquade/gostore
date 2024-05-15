@@ -44,6 +44,7 @@ func (man *Manifest) Compact() {
 	for {
 		select {
 		case <-man.done:
+			slog.Info("Compaction thread closed")
 			return
 		case <-man.compactionTicker.C:
 			allCompacted := true
@@ -116,7 +117,12 @@ func (man *Manifest) level_0_compact(level *Level) {
 		}
 
 		man.Levels[1].Add(splitTable)
-		entry := &ManifestEntry{Op: ADDTABLE, Table: splitTable, Level: 1}
+		pto, err := splitTable.ToProto()
+		if err != nil {
+			slog.Error("error marshalling to protobuf")
+			panic(err)
+		}
+		entry := &ManifestEntry{Op: ADDTABLE, Table: pto, Level: 1}
 		err = man.wal.Write(entry)
 		if err != nil {
 			slog.Error("Failed to add table to level 1", "filename", splitTable.Name)
@@ -162,13 +168,22 @@ func (man *Manifest) lower_level_compact(level *Level) {
 	if len(overlaps) == 0 {
 		newLocation := filepath.Join(man.Levels[level.Number+1].Path, filepath.Base(table.Name))
 
-		os.Rename(table.Name, newLocation)
+		err := os.Rename(table.Name, newLocation)
+		if err != nil {
+			panic(err)
+		}
 
 		table.Name = newLocation
 
 		// Update manifest
-		man.AddTable(table, level.Number+1)
-		man.RemoveTable(table, level.Number)
+		err = man.AddTable(table, level.Number+1)
+		if err != nil {
+			panic(err)
+		}
+		err = man.RemoveTable(table, level.Number)
+		if err != nil {
+			panic(err)
+		}
 		return
 	}
 

@@ -1,6 +1,6 @@
 module github.com/dillonkmcquade/gostore
 
-go 1.21.9
+go 1.22.2
 
 require (
 	google.golang.org/grpc v1.63.2

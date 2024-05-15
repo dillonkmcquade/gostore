@@ -2,39 +2,40 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
+	"math/rand"
 	"os"
 	"path/filepath"
 
-	"github.com/dillonkmcquade/gostore/internal/lsm_tree"
+	"github.com/dillonkmcquade/gostore/internal/lsm"
 )
 
 var logLevel = new(slog.LevelVar)
 
 func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("Recovered", "cause", r)
-		}
-	}()
-	logLevel.Set(slog.LevelInfo)
+	logLevel.Set(slog.LevelDebug)
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
 	userHome := os.Getenv("HOME")
 	gostoreHome := filepath.Join(userHome, ".gostore")
 
-	opts := lsm_tree.NewTestLSMOpts(gostoreHome)
-	tree := lsm_tree.New[int64, []byte](opts)
+	opts := lsm.NewTestLSMOpts(gostoreHome)
+	tree, err := lsm.New(opts)
+	if err != nil {
+		fmt.Printf("%v", err)
+		panic(err)
+	}
 
 	defer tree.Close()
 
-	for i := 0; i < 15500; i++ {
-		v, err := tree.Read(int64(i))
+	n := 15000
+
+	for i := 0; i < n; i++ {
+		_, err := tree.Read([]byte(fmt.Sprintf("%v", rand.Intn(n))))
 		if err != nil {
-			log.Fatalf("error reading %v, received '%v'", i, err)
+			slog.Error(fmt.Sprintf("error reading %v", i))
+			return
 		}
-		fmt.Println(string(v))
 	}
 	fmt.Println("Success")
 }

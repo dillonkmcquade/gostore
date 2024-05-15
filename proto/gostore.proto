@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package gostore.proto;
+
 option go_package = "github.com/dillonkmcquade/gostore/internal/pb";
 
 service GoStore {

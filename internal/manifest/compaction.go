@@ -57,7 +57,6 @@ func (man *Manifest) Compact() {
 			}
 
 			if allCompacted {
-				slog.Debug("Skipping compaction")
 				continue
 			}
 
@@ -101,7 +100,7 @@ func (man *Manifest) level_0_compact(level *Level) {
 	})
 
 	// Write files and add to manifest
-	for _, splitTable := range split {
+	for splitTable := range split {
 		splitTable.Name = filepath.Join(man.Levels[1].Path, sstable.GenerateUniqueSegmentName(splitTable.CreatedOn))
 
 		_, err := splitTable.Sync()
@@ -198,7 +197,7 @@ func (man *Manifest) lower_level_compact(level *Level) {
 	})
 
 	// Write files and add to manifest
-	for _, splitTable := range split {
+	for splitTable := range split {
 		splitTable.Name = filepath.Join(man.Levels[level.Number+1].Path, fmt.Sprintf("%v.segment", splitTable.CreatedOn.Unix()))
 
 		_, err := splitTable.Sync()

@@ -118,9 +118,13 @@ func TestMerge(t *testing.T) {
 	}
 
 	merged := Merge(t1, t2)
+	count := 0
 
-	if len(merged.Entries) != total {
-		t.Errorf("Should have %v entries, found %v", total, len(merged.Entries))
+	for range merged {
+		count++
+	}
+	if count != total {
+		t.Errorf("%v should equal %v", count, total)
 	}
 }
 
@@ -138,16 +142,27 @@ func TestSplit(t *testing.T) {
 			{Op: pb.Operation_OPERATION_INSERT, Key: []byte{49}, Value: []byte("value9")},
 		},
 	}
-	split := Split(tbl, 2, &Opts{
+
+	ch := make(chan *pb.SSTable_Entry)
+	go func() {
+		defer close(ch)
+		for _, entry := range tbl.Entries {
+			ch <- entry
+		}
+	}()
+	split := Split(ch, 2, &Opts{
 		BloomOpts: &filter.Opts{
 			Size: 100,
 			Path: tmp,
 		},
 		DestDir: tmp,
 	})
-
-	if len(split) != 3 {
-		t.Errorf("Should have 3 tables, found %v", len(split))
+	count := 0
+	for range split {
+		count++
+	}
+	if count != 3 {
+		t.Error("Should be 3")
 	}
 }
 

@@ -132,7 +132,6 @@ func (rbt *RedBlackTree[K, V]) put(node *Node[K, V], key K, val V) *Node[K, V] {
 		node.right = rbt.put(node.right, key, val)
 	} else {
 		node.Value = val
-		// node.Operation = op
 	}
 
 	if isRed(node.right) && !isRed(node.left) {

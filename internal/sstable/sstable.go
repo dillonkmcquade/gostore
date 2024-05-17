@@ -19,7 +19,7 @@ import (
 type SSTable struct {
 	Entries   []*pb.SSTable_Entry // A list of entries sorted by key
 	Filter    *filter.BloomFilter // Check if key could be in table
-	file      *os.File            // pointer to file descriptor for the table
+	file      *os.File            // pointer to os.File
 	Size      int64               // Size of file in bytes
 	Name      string              // full filename
 	First     []byte              // First key in range
